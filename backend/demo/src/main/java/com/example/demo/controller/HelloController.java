@@ -10,6 +10,6 @@ public class HelloController {
     @CrossOrigin(origins = "http://localhost:3000")
     @GetMapping("/hello")
     public String hello() {
-        return "Hello from Spring Boot";
+        return "Hello from Spring Boot!(rewrite)";
     }
 }
