@@ -40,6 +40,7 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           source: backend/demo/target/demo-0.0.1-SNAPSHOT.jar
           target: /home/ec2-user/app/
+          strip_components: 3   # ← これを追加
 
       # ⑥ EC2 上で Spring Boot アプリを再起動
       - name: Run app on EC2
