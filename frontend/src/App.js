@@ -188,7 +188,7 @@ function App() {
                 <table className="inventory-table">
                   <thead>
                     <tr>
-                      <th>備品番号</th>
+                      <th>備品番号（更新）</th>
                       <th>備品名称</th>
                       <th>型番</th>
                       <th>在庫状況</th>
