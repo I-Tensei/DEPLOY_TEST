@@ -17,7 +17,7 @@ function App() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch('http://ec2-3-135-214-156.us-east-2.compute.amazonaws.com:8080/items');
+      const res = await fetch('http://ec2-18-219-230-59.us-east-2.compute.amazonaws.com:8080/items');
       const data = await res.json();
       setItems(data);
     } catch (error) {
@@ -29,7 +29,7 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://ec2-3-135-214-156.us-east-2.compute.amazonaws.com:8080/items', {
+      const res = await fetch('http://ec2-18-219-230-59.us-east-2.compute.amazonaws.com:8080/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItem),
@@ -50,7 +50,7 @@ function App() {
       <div style={{ marginBottom: '30px', border: '1px solid #ccc', padding: '20px' }}>
         <h2>新規登録</h2>
         <form onSubmit={handleSubmit}>
-          <div>
+          <div style={{ marginBottom: '10px' }}>
             <label>備品番号: </label>
             <input 
               value={newItem.itemNumber} 
@@ -58,7 +58,7 @@ function App() {
               required 
             />
           </div>
-          <div>
+          <div style={{ marginBottom: '10px' }}>
             <label>備品名称: </label>
             <input 
               value={newItem.itemName} 
@@ -66,14 +66,14 @@ function App() {
               required 
             />
           </div>
-          <div>
+          <div style={{ marginBottom: '10px' }}>
             <label>型番: </label>
             <input 
               value={newItem.modelNumber} 
               onChange={e => setNewItem({...newItem, modelNumber: e.target.value})}
             />
           </div>
-          <div>
+          <div style={{ marginBottom: '10px' }}>
             <label>在庫有無: </label>
             <select 
               value={newItem.inStock} 
@@ -83,7 +83,7 @@ function App() {
               <option value="false">無</option>
             </select>
           </div>
-          <div>
+          <div style={{ marginBottom: '10px' }}>
             <label>備考: </label>
             <input 
               value={newItem.remarks} 
