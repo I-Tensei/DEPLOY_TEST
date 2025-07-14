@@ -1,15 +1,35 @@
 package com.example.demo.entity;
 
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+@Entity
+@Table(name = "items")
 public class Item {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    
+    @Column(name = "item_number", unique = true, nullable = false, length = 50)
     private String itemNumber;     // 備品番号
+    
+    @Column(name = "item_name", nullable = false, length = 255)
     private String itemName;       // 備品名称
+    
+    @Column(name = "model_number", length = 255)
     private String modelNumber;    // 型番
+    
+    @Column(name = "in_stock", nullable = false)
     private boolean inStock;       // 在庫有無
+    
+    @Column(name = "remarks", columnDefinition = "TEXT")
     private String remarks;        // 備考
+    
+    @Column(name = "registered_at", nullable = false)
     private LocalDateTime registeredAt; // 登録時間
+    
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt; // 更新時間
 
     // デフォルトコンストラクタ
     public Item() {}
@@ -24,6 +44,19 @@ public class Item {
         this.inStock = inStock;
         this.remarks = remarks;
         this.registeredAt = registeredAt;
+        this.updatedAt = LocalDateTime.now();
+    }
+    
+    // JPA用ライフサイクルメソッド
+    @PrePersist
+    protected void onCreate() {
+        registeredAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+    
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 
     // getter/setter
@@ -47,4 +80,7 @@ public class Item {
     
     public LocalDateTime getRegisteredAt() { return registeredAt; }
     public void setRegisteredAt(LocalDateTime registeredAt) { this.registeredAt = registeredAt; }
+    
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }
