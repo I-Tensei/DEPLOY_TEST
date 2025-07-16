@@ -74,6 +74,8 @@ jobs:
           target: /home/ec2-user/app/
           strip_components: 3
 
+       # 既存のファイルの該当部分を以下に置き換え
+
        # ⑦ EC2 上で環境設定とSpring Boot アプリを再起動
       - name: Deploy and restart app on EC2
         uses: appleboy/ssh-action@v1.0.0
@@ -87,8 +89,9 @@ jobs:
             
             # 既存のJavaプロセスを停止
             pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
+            sudo systemctl stop demoapp || true
             
-            # systemdサービスファイルを作成
+            # systemdサービスファイルを作成（メモリ設定追加）
             sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOF
             [Unit]
             Description=Demo Spring Boot Application
@@ -98,12 +101,14 @@ jobs:
             Type=simple
             User=ec2-user
             WorkingDirectory=/home/ec2-user/app
-            ExecStart=/usr/bin/java -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=8080 --server.address=0.0.0.0 --logging.level.root=INFO
-            Restart=on-failure
+            Environment="JAVA_OPTS=-Xmx512m -Xms256m"
+            ExecStart=/usr/bin/java \$JAVA_OPTS -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=8080 --server.address=0.0.0.0 --logging.level.root=INFO --spring.datasource.url=jdbc:h2:file:/home/ec2-user/app/h2db --spring.h2.console.enabled=true
+            Restart=always
             RestartSec=10
             StandardOutput=journal
             StandardError=journal
             TimeoutStartSec=120
+            TimeoutStopSec=30
 
             [Install]
             WantedBy=multi-user.target
@@ -114,16 +119,26 @@ jobs:
             
             # サービスを有効化・開始
             sudo systemctl enable demoapp
-            sudo systemctl stop demoapp || true
-            sleep 5
+            sleep 3
             sudo systemctl start demoapp
             
-            # 起動確認
-            sleep 15
-            sudo systemctl status demoapp --no-pager --lines=10
+            # 起動確認（より長い待機時間）
+            sleep 20
+            sudo systemctl status demoapp --no-pager --lines=15
             
-            # ログ確認
-            sudo journalctl -u demoapp --since "1 minute ago" --no-pager --lines=20
+            # アプリケーションが応答するかテスト
+            for i in {1..10}; do
+                if curl -f http://localhost:8080/items >/dev/null 2>&1; then
+                    echo "Application is responding successfully!"
+                    break
+                elif [ $i -eq 10 ]; then
+                    echo "Application failed to respond after 10 attempts"
+                    sudo journalctl -u demoapp --since "2 minutes ago" --no-pager --lines=30
+                else
+                    echo "Attempt $i: Application not yet ready, waiting..."
+                    sleep 10
+                fi
+            done
       
       # ⑧ Node.js をセットアップ
       - name: Set up Node.js
