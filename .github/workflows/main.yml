@@ -21,18 +21,49 @@ jobs:
           java-version: 17
           distribution: 'temurin'
 
-      # ③ JUnitテストを実行（エラー時は継続）
+      # ③ テストディレクトリの作成とファイル移動
+      - name: Setup test directory and files
+        working-directory: backend/demo
+        run: |
+          # テストディレクトリを作成
+          mkdir -p src/test/java/com/example/demo
+          
+          # 間違った場所にあるテストファイルを正しい場所に移動（存在する場合）
+          if [ -f src/main/java/com/example/demo/DemoApplicationTests.java ]; then
+            mv src/main/java/com/example/demo/DemoApplicationTests.java src/test/java/com/example/demo/
+          fi
+          
+          # テストファイルが存在しない場合は作成
+          if [ ! -f src/test/java/com/example/demo/DemoApplicationTests.java ]; then
+            cat > src/test/java/com/example/demo/DemoApplicationTests.java << 'EOF'
+          package com.example.demo;
+          
+          import org.junit.jupiter.api.Test;
+          import org.springframework.boot.test.context.SpringBootTest;
+          
+          @SpringBootTest
+          class DemoApplicationTests {
+          
+              @Test
+              void contextLoads() {
+                  // Spring Bootコンテキストの起動テスト
+              }
+          }
+          EOF
+          fi
+
+      # ④ JUnitテストを実行（エラー時は継続）
       - name: Run JUnit tests
         working-directory: backend/demo
-        run: mvn test -Dspring.profiles.active=dev || echo "Tests failed but continuing build"
+        run: mvn test -Dspring.profiles.active=dev
         continue-on-error: true
 
-      # ④ Maven で Spring Boot アプリをビルド（テストは省略）
+      # ⑤ Maven で Spring Boot アプリをビルド（テストは省略）
       - name: Build with Maven
         working-directory: backend/demo
         run: mvn clean package -DskipTests
 
-      # ⑤ JAR ファイルを EC2 にアップロード
+      # ⑥ JAR ファイルを EC2 にアップロード
       - name: Upload JAR to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -43,7 +74,7 @@ jobs:
           target: /home/ec2-user/app/
           strip_components: 3
 
-       # ⑥ EC2 上で環境設定とSpring Boot アプリを再起動
+       # ⑦ EC2 上で環境設定とSpring Boot アプリを再起動
       - name: Deploy and restart app on EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -57,7 +88,7 @@ jobs:
             # 既存のJavaプロセスを停止
             pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
             
-            # systemdサービスファイルを作成（H2データベース用、boolean型対応）
+            # systemdサービスファイルを作成
             sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOF
             [Unit]
             Description=Demo Spring Boot Application
@@ -87,27 +118,27 @@ jobs:
             sleep 5
             sudo systemctl start demoapp
             
-            # 起動確認（時間をかけて待機）
+            # 起動確認
             sleep 15
             sudo systemctl status demoapp --no-pager --lines=10
             
             # ログ確認
             sudo journalctl -u demoapp --since "1 minute ago" --no-pager --lines=20
       
-      # Node.js をセットアップ
+      # ⑧ Node.js をセットアップ
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
           
-      # フロントエンドのビルド
+      # ⑨ フロントエンドのビルド
       - name: Build React app
         working-directory: frontend
         run: |
           npm ci
           npm run build
               
-      # ビルド成果物をEC2にアップロード
+      # ⑩ ビルド成果物をEC2にアップロード
       - name: Upload React build to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -118,7 +149,7 @@ jobs:
           target: /home/ec2-user/frontend_build/
           strip_components: 2
         
-      # EC2上でNginxのセットアップとReactアプリのデプロイ
+      # ⑪ EC2上でNginxのセットアップとReactアプリのデプロイ
       - name: Setup Nginx and Deploy React app
         uses: appleboy/ssh-action@v1.0.0
         with:
