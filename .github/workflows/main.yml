@@ -42,7 +42,7 @@ jobs:
           target: /home/ec2-user/app/
           strip_components: 3
 
-      # ⑥ EC2 上で環境設定とSpring Boot アプリ再起動
+      # ⑥ EC2 上で環境設定とSpring Boot アプリを再起動
       - name: Deploy and restart app on EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
