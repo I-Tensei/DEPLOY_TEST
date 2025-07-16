@@ -42,7 +42,7 @@ jobs:
           target: /home/ec2-user/app/
           strip_components: 3
 
-      # ⑥ EC2 上で環境設定とSpring Boot アプリを再起動
+       # ⑥ EC2 上で環境設定とSpring Boot アプリを再起動
       - name: Deploy and restart app on EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -50,44 +50,42 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            # 環境変数を設定
-            sudo tee /etc/environment > /dev/null <<EOF
-            SPRING_PROFILES_ACTIVE=prod
-            DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=${{ secrets.DB_PORT }}
-            DB_NAME=${{ secrets.DB_NAME }}
-            DB_USERNAME=${{ secrets.DB_USERNAME }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            EOF
+            # アプリケーションディレクトリの作成
+            mkdir -p /home/ec2-user/app
             
-            # systemdサービスの環境変数を更新
+            # 既存のJavaプロセスを停止
+            pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
+            
+            # systemdサービスファイルを作成（H2データベース用）
             sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOF
             [Unit]
             Description=Demo Spring Boot Application
             After=network.target
 
             [Service]
-            Type=forking
+            Type=simple
             User=ec2-user
-            ExecStart=/usr/bin/java -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar
-            Environment=SPRING_PROFILES_ACTIVE=prod
-            Environment=DB_HOST=${{ secrets.DB_HOST }}
-            Environment=DB_PORT=${{ secrets.DB_PORT }}
-            Environment=DB_NAME=${{ secrets.DB_NAME }}
-            Environment=DB_USERNAME=${{ secrets.DB_USERNAME }}
-            Environment=DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            SuccessExitStatus=143
-            TimeoutStopSec=10
+            WorkingDirectory=/home/ec2-user/app
+            ExecStart=/usr/bin/java -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=8080 --server.address=0.0.0.0
             Restart=on-failure
             RestartSec=5
+            StandardOutput=journal
+            StandardError=journal
 
             [Install]
             WantedBy=multi-user.target
             EOF
             
-            # systemdを再読み込みして再起動
+            # systemdを再読み込み
             sudo systemctl daemon-reload
+            
+            # サービスを有効化・開始
+            sudo systemctl enable demoapp
             sudo systemctl restart demoapp
+            
+            # 起動確認（少し待ってからステータス確認）
+            sleep 10
+            sudo systemctl status demoapp --no-pager
       
       # Node.js をセットアップ
       - name: Set up Node.js
