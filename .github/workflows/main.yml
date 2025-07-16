@@ -21,10 +21,10 @@ jobs:
           java-version: 17
           distribution: 'temurin'
 
-      # ③ JUnitテストを実行
+      # ③ JUnitテストを実行（開発環境プロファイル使用）
       - name: Run JUnit tests
         working-directory: backend/demo
-        run: mvn test
+        run: mvn test -Dspring.profiles.active=dev
 
       # ④ Maven で Spring Boot アプリをビルド（テストは省略）
       - name: Build with Maven
@@ -42,14 +42,51 @@ jobs:
           target: /home/ec2-user/app/
           strip_components: 3
 
-      # ⑥ EC2 上で Spring Boot アプリを再起動
-      - name: Run app on EC2
+      # ⑥ EC2 上で環境設定とSpring Boot アプリ再起動
+      - name: Deploy and restart app on EC2
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
+            # 環境変数を設定
+            sudo tee /etc/environment > /dev/null <<EOF
+            SPRING_PROFILES_ACTIVE=prod
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            EOF
+            
+            # systemdサービスの環境変数を更新
+            sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOF
+            [Unit]
+            Description=Demo Spring Boot Application
+            After=network.target
+
+            [Service]
+            Type=forking
+            User=ec2-user
+            ExecStart=/usr/bin/java -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar
+            Environment=SPRING_PROFILES_ACTIVE=prod
+            Environment=DB_HOST=${{ secrets.DB_HOST }}
+            Environment=DB_PORT=${{ secrets.DB_PORT }}
+            Environment=DB_NAME=${{ secrets.DB_NAME }}
+            Environment=DB_USERNAME=${{ secrets.DB_USERNAME }}
+            Environment=DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            SuccessExitStatus=143
+            TimeoutStopSec=10
+            Restart=on-failure
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            
+            # systemdを再読み込みして再起動
+            sudo systemctl daemon-reload
             sudo systemctl restart demoapp
       
       # Node.js をセットアップ
@@ -76,7 +113,7 @@ jobs:
           target: /home/ec2-user/frontend_build/
           strip_components: 2
         
-      # EC2上でNginxのセットアップとReactアプリのデプロイ（Amazon Linux 2023対応）
+      # EC2上でNginxのセットアップとReactアプリのデプロイ
       - name: Setup Nginx and Deploy React app
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -84,7 +121,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            # Nginxがインストールされていない場合はインストール（Amazon Linux 2023）
+            # Nginxがインストールされていない場合はインストール
             if ! command -v nginx &> /dev/null; then
               sudo dnf update -y
               sudo dnf install nginx -y
@@ -111,3 +148,4 @@ jobs:
             
             # ステータス確認
             sudo systemctl status nginx --no-pager
+            sudo systemctl status demoapp --no-pager
