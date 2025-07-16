@@ -2,6 +2,7 @@ package com.example.demo.entity;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 
 @Entity
@@ -35,10 +36,10 @@ public class Item {
     @Size(max = 50, message = "型番は50文字以内で入力してください")
     private String modelNumber;
     
-    // 在庫有無: 0=在庫切れ, 1=在庫有り (H2対応でINTEGER型に変更)
+    // 在庫有無: データベースはINTEGER、JSONではboolean (H2データベース対応)
     @Column(name = "in_stock", nullable = false)
     @NotNull(message = "在庫状況は必須です")
-    private Integer inStock = 1;  // デフォルトは在庫有り
+    private Integer inStockInt = 1;  // データベース用: 0=在庫切れ, 1=在庫有り
     
     // 備考: 任意、最大500文字
     @Column(name = "remarks", length = 500)
@@ -53,15 +54,15 @@ public class Item {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    // カテゴリID（ItemServiceで使用されている）
+    // カテゴリID（将来の拡張用）
     @Column(name = "category_id")
     private Integer categoryId;
 
-    // 数量（ItemServiceで使用されている）
+    // 数量（将来の拡張用）
     @Column(name = "quantity")
     private Integer quantity;
 
-    // 価格（ItemServiceで使用されている）
+    // 価格（将来の拡張用）
     @Column(name = "price")
     private Integer price;
 
@@ -69,11 +70,11 @@ public class Item {
     public Item() {}
 
     // フルコンストラクタ
-    public Item(String itemNumber, String itemName, String modelNumber, Integer inStock, String remarks) {
+    public Item(String itemNumber, String itemName, String modelNumber, boolean inStock, String remarks) {
         this.itemNumber = itemNumber;
         this.itemName = itemName;
         this.modelNumber = modelNumber;
-        this.inStock = inStock;
+        this.inStockInt = inStock ? 1 : 0;
         this.remarks = remarks;
     }
 
@@ -110,12 +111,24 @@ public class Item {
         this.modelNumber = modelNumber;
     }
 
-    public Integer getInStock() {
-        return inStock;
+    // フロントエンド用のboolean型getter/setter（JSON用）
+    @JsonProperty("inStock")
+    public boolean isInStock() {
+        return inStockInt != null && inStockInt == 1;
     }
 
-    public void setInStock(Integer inStock) {
-        this.inStock = inStock;
+    @JsonProperty("inStock")
+    public void setInStock(boolean inStock) {
+        this.inStockInt = inStock ? 1 : 0;
+    }
+
+    // データベース用のInteger型getter/setter
+    public Integer getInStockInt() {
+        return inStockInt;
+    }
+
+    public void setInStockInt(Integer inStockInt) {
+        this.inStockInt = inStockInt;
     }
 
     public String getRemarks() {
@@ -186,7 +199,7 @@ public class Item {
                 ", itemNumber='" + itemNumber + '\'' +
                 ", itemName='" + itemName + '\'' +
                 ", modelNumber='" + modelNumber + '\'' +
-                ", inStock=" + inStock +
+                ", inStock=" + isInStock() +
                 ", remarks='" + remarks + '\'' +
                 ", categoryId=" + categoryId +
                 ", quantity=" + quantity +
