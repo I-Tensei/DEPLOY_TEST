@@ -90,10 +90,10 @@ public class ItemController {
         return ResponseEntity.ok(items);
     }
 
-    // 統計情報
+    // 統計情報取得 (API版)
     @GetMapping("/api/items/stats")
-    public ResponseEntity<ItemService.ItemStats> getItemStats() {
-        ItemService.ItemStats stats = itemService.getItemStats();
+    public ResponseEntity<ItemService.StatsInfo> getItemStats() {
+        ItemService.StatsInfo stats = itemService.getStats();
         return ResponseEntity.ok(stats);
     }
 }
