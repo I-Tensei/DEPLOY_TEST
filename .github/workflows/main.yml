@@ -21,16 +21,18 @@ jobs:
           java-version: 17
           distribution: 'temurin'
 
-      # ③ テストディレクトリの作成とファイル移動
+      # ③ テストディレクトリの作成とファイル移動（重複排除）
       - name: Setup test directory and files
         working-directory: backend/demo
         run: |
+          # すべてのDemoApplicationTests.javaファイルを削除
+          find . -name "DemoApplicationTests.java" -delete
+          
+          # テストディレクトリを作成
           mkdir -p src/test/java/com/example/demo
-          if [ -f src/main/java/com/example/demo/DemoApplicationTests.java ]; then
-            mv src/main/java/com/example/demo/DemoApplicationTests.java src/test/java/com/example/demo/
-          fi
-          if [ ! -f src/test/java/com/example/demo/DemoApplicationTests.java ]; then
-            cat > src/test/java/com/example/demo/DemoApplicationTests.java << 'EOF'
+          
+          # 正しい場所に新しいテストファイルを作成
+          cat > src/test/java/com/example/demo/DemoApplicationTests.java << 'EOF'
           package com.example.demo;
           
           import org.junit.jupiter.api.Test;
@@ -45,7 +47,6 @@ jobs:
               }
           }
           EOF
-          fi
 
       # ④ コンパイルエラーの根本的修正 - 最小限のコントローラーに置き換え
       - name: Fix ItemController compilation errors
@@ -152,145 +153,4 @@ jobs:
       # ⑥ Maven で Spring Boot アプリをビルド（テストは省略）
       - name: Build with Maven
         working-directory: backend/demo
-        run: mvn clean package -DskipTests
-
-      # ⑦ JAR ファイルを EC2 にアップロード
-      - name: Upload JAR to EC2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          source: backend/demo/target/demo-0.0.1-SNAPSHOT.jar
-          target: /home/ec2-user/app/
-          strip_components: 3
-
-      # ⑧ EC2 上で環境設定とSpring Boot アプリを再起動
-      - name: Deploy and restart app on EC2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            # アプリケーションディレクトリの作成
-            mkdir -p /home/ec2-user/app
-            
-            # 既存のJavaプロセスを停止
-            pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
-            sudo systemctl stop demoapp || true
-            
-            # systemdサービスファイルを作成（メモリ設定追加）
-            sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOF
-            [Unit]
-            Description=Demo Spring Boot Application
-            After=network.target
-
-            [Service]
-            Type=simple
-            User=ec2-user
-            WorkingDirectory=/home/ec2-user/app
-            Environment="JAVA_OPTS=-Xmx512m -Xms256m"
-            ExecStart=/usr/bin/java \$JAVA_OPTS -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=8080 --server.address=0.0.0.0 --logging.level.root=INFO --spring.datasource.url=jdbc:h2:file:/home/ec2-user/app/h2db --spring.h2.console.enabled=true
-            Restart=always
-            RestartSec=10
-            StandardOutput=journal
-            StandardError=journal
-            TimeoutStartSec=120
-            TimeoutStopSec=30
-
-            [Install]
-            WantedBy=multi-user.target
-            EOF
-            
-            # systemdを再読み込み
-            sudo systemctl daemon-reload
-            
-            # サービスを有効化・開始
-            sudo systemctl enable demoapp
-            sleep 3
-            sudo systemctl start demoapp
-            
-            # 起動確認（より長い待機時間）
-            sleep 20
-            sudo systemctl status demoapp --no-pager --lines=15
-            
-            # アプリケーションが応答するかテスト
-            for i in {1..10}; do
-                if curl -f http://localhost:8080/items >/dev/null 2>&1; then
-                    echo "Application is responding successfully!"
-                    break
-                elif [ $i -eq 10 ]; then
-                    echo "Application failed to respond after 10 attempts"
-                    sudo journalctl -u demoapp --since "2 minutes ago" --no-pager --lines=30
-                else
-                    echo "Attempt $i: Application not yet ready, waiting..."
-                    sleep 10
-                fi
-            done
-      
-      # ⑨ Node.js をセットアップ
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          
-      # ⑩ フロントエンドのビルド
-      - name: Build React app
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-              
-      # ⑪ ビルド成果物をEC2にアップロード
-      - name: Upload React build to EC2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          source: frontend/build/*
-          target: /home/ec2-user/frontend_build/
-          strip_components: 2
-        
-      # ⑫ EC2上でNginxのセットアップとReactアプリのデプロイ
-      - name: Setup Nginx and Deploy React app
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            # Nginxがインストールされていない場合はインストール
-            if ! command -v nginx &> /dev/null; then
-              sudo dnf update -y
-              sudo dnf install nginx -y
-            fi
-            
-            # Nginxを起動・有効化
-            sudo systemctl start nginx
-            sudo systemctl enable nginx
-            
-            # ファイアウォール設定
-            sudo firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
-            sudo firewall-cmd --permanent --add-port=8080/tcp >/dev/null 2>&1 || true
-            sudo firewall-cmd --reload >/dev/null 2>&1 || true
-            
-            # 古いファイルを削除してから新しいファイルをコピー
-            sudo rm -rf /usr/share/nginx/html/*
-            sudo cp -r /home/ec2-user/frontend_build/* /usr/share/nginx/html/
-            
-            # 権限を設定
-            sudo chown -R nginx:nginx /usr/share/nginx/html/
-            sudo chmod -R 755 /usr/share/nginx/html/
-            
-            # Nginxを再起動
-            sudo systemctl restart nginx
-            
-            # 最終ステータス確認
-            echo "=== Nginx Status ==="
-            sudo systemctl status nginx --no-pager --lines=5
-            echo "=== Demo App Status ==="
-            sudo systemctl status demoapp --no-pager --lines=5
-            echo "=== Recent App Logs ==="
-            sudo journalctl -u demoapp --since "2 minutes ago" --no-pager --lines=10
+        run: mvn clean package -
