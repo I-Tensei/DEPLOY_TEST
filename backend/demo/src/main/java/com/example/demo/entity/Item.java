@@ -1,86 +1,198 @@
 package com.example.demo.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "items")
+@Table(name = "items", indexes = {
+    @Index(name = "idx_item_number", columnList = "item_number"),
+    @Index(name = "idx_in_stock", columnList = "in_stock"),
+    @Index(name = "idx_registered_at", columnList = "registered_at")
+})
 public class Item {
+    
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
     private Long id;
     
-    @Column(name = "item_number", unique = true, nullable = false, length = 50)
-    private String itemNumber;     // 備品番号
+    // 備品番号: 必須、一意、最大20文字
+    @Column(name = "item_number", unique = true, nullable = false, length = 20)
+    @NotBlank(message = "備品番号は必須です")
+    @Size(max = 20, message = "備品番号は20文字以内で入力してください")
+    @Pattern(regexp = "^[A-Za-z0-9-_]+$", message = "備品番号は英数字、ハイフン、アンダースコアのみ使用可能です")
+    private String itemNumber;
     
-    @Column(name = "item_name", nullable = false, length = 255)
-    private String itemName;       // 備品名称
+    // 備品名称: 必須、最大100文字
+    @Column(name = "item_name", nullable = false, length = 100)
+    @NotBlank(message = "備品名称は必須です")
+    @Size(max = 100, message = "備品名称は100文字以内で入力してください")
+    private String itemName;
     
-    @Column(name = "model_number", length = 255)
-    private String modelNumber;    // 型番
+    // 型番: 任意、最大50文字
+    @Column(name = "model_number", length = 50)
+    @Size(max = 50, message = "型番は50文字以内で入力してください")
+    private String modelNumber;
     
+    // 在庫有無: 0=在庫切れ, 1=在庫有り (H2対応でINTEGER型に変更)
     @Column(name = "in_stock", nullable = false)
-    private boolean inStock;       // 在庫有無
+    @NotNull(message = "在庫状況は必須です")
+    private Integer inStock = 1;  // デフォルトは在庫有り
     
-    @Column(name = "remarks", columnDefinition = "TEXT")
-    private String remarks;        // 備考
+    // 備考: 任意、最大500文字
+    @Column(name = "remarks", length = 500)
+    @Size(max = 500, message = "備考は500文字以内で入力してください")
+    private String remarks;
     
-    @Column(name = "registered_at", nullable = false)
-    private LocalDateTime registeredAt; // 登録時間
+    // 登録時間: 必須、自動設定
+    @Column(name = "registered_at", nullable = false, updatable = false)
+    private LocalDateTime registeredAt;
     
+    // 更新時間: 任意、自動更新
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt; // 更新時間
+    private LocalDateTime updatedAt;
+
+    // カテゴリID（ItemServiceで使用されている）
+    @Column(name = "category_id")
+    private Integer categoryId;
+
+    // 数量（ItemServiceで使用されている）
+    @Column(name = "quantity")
+    private Integer quantity;
+
+    // 価格（ItemServiceで使用されている）
+    @Column(name = "price")
+    private Integer price;
 
     // デフォルトコンストラクタ
     public Item() {}
-    
-    // 全引数コンストラクタ
-    public Item(Long id, String itemNumber, String itemName, String modelNumber, 
-                boolean inStock, String remarks, LocalDateTime registeredAt) {
-        this.id = id;
+
+    // フルコンストラクタ
+    public Item(String itemNumber, String itemName, String modelNumber, Integer inStock, String remarks) {
         this.itemNumber = itemNumber;
         this.itemName = itemName;
         this.modelNumber = modelNumber;
         this.inStock = inStock;
         this.remarks = remarks;
-        this.registeredAt = registeredAt;
-        this.updatedAt = LocalDateTime.now();
     }
-    
-    // JPA用ライフサイクルメソッド
+
+    // ゲッター・セッターメソッド
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getItemNumber() {
+        return itemNumber;
+    }
+
+    public void setItemNumber(String itemNumber) {
+        this.itemNumber = itemNumber;
+    }
+
+    public String getItemName() {
+        return itemName;
+    }
+
+    public void setItemName(String itemName) {
+        this.itemName = itemName;
+    }
+
+    public String getModelNumber() {
+        return modelNumber;
+    }
+
+    public void setModelNumber(String modelNumber) {
+        this.modelNumber = modelNumber;
+    }
+
+    public Integer getInStock() {
+        return inStock;
+    }
+
+    public void setInStock(Integer inStock) {
+        this.inStock = inStock;
+    }
+
+    public String getRemarks() {
+        return remarks;
+    }
+
+    public void setRemarks(String remarks) {
+        this.remarks = remarks;
+    }
+
+    public LocalDateTime getRegisteredAt() {
+        return registeredAt;
+    }
+
+    public void setRegisteredAt(LocalDateTime registeredAt) {
+        this.registeredAt = registeredAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public Integer getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Integer categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public Integer getQuantity() {
+        return quantity;
+    }
+
+    public void setQuantity(Integer quantity) {
+        this.quantity = quantity;
+    }
+
+    public Integer getPrice() {
+        return price;
+    }
+
+    public void setPrice(Integer price) {
+        this.price = price;
+    }
+
+    // JPA ライフサイクルメソッド
     @PrePersist
     protected void onCreate() {
         registeredAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
     }
-    
+
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
 
-    // getter/setter
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    
-    public String getItemNumber() { return itemNumber; }
-    public void setItemNumber(String itemNumber) { this.itemNumber = itemNumber; }
-    
-    public String getItemName() { return itemName; }
-    public void setItemName(String itemName) { this.itemName = itemName; }
-    
-    public String getModelNumber() { return modelNumber; }
-    public void setModelNumber(String modelNumber) { this.modelNumber = modelNumber; }
-    
-    public boolean isInStock() { return inStock; }
-    public void setInStock(boolean inStock) { this.inStock = inStock; }
-    
-    public String getRemarks() { return remarks; }
-    public void setRemarks(String remarks) { this.remarks = remarks; }
-    
-    public LocalDateTime getRegisteredAt() { return registeredAt; }
-    public void setRegisteredAt(LocalDateTime registeredAt) { this.registeredAt = registeredAt; }
-    
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    // toString メソッド
+    @Override
+    public String toString() {
+        return "Item{" +
+                "id=" + id +
+                ", itemNumber='" + itemNumber + '\'' +
+                ", itemName='" + itemName + '\'' +
+                ", modelNumber='" + modelNumber + '\'' +
+                ", inStock=" + inStock +
+                ", remarks='" + remarks + '\'' +
+                ", categoryId=" + categoryId +
+                ", quantity=" + quantity +
+                ", price=" + price +
+                ", registeredAt=" + registeredAt +
+                ", updatedAt=" + updatedAt +
+                '}';
+    }
 }

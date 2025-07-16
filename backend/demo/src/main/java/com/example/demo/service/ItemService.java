@@ -39,6 +39,16 @@ public class ItemService {
             throw new RuntimeException("備品番号が既に存在します: " + item.getItemNumber());
         }
         
+        // 在庫フラグの正規化（null チェック）
+        if (item.getInStock() == null) {
+            item.setInStock(1);  // デフォルトは在庫有り
+        }
+        
+        // 数量のデフォルト設定
+        if (item.getQuantity() == null) {
+            item.setQuantity(1);
+        }
+        
         item.setRegisteredAt(LocalDateTime.now());
         item.setUpdatedAt(LocalDateTime.now());
         return itemRepository.save(item);
@@ -59,8 +69,11 @@ public class ItemService {
             item.setItemNumber(updatedItem.getItemNumber());
             item.setItemName(updatedItem.getItemName());
             item.setModelNumber(updatedItem.getModelNumber());
-            item.setInStock(updatedItem.isInStock());
+            item.setInStock(updatedItem.getInStock());
             item.setRemarks(updatedItem.getRemarks());
+            item.setQuantity(updatedItem.getQuantity());
+            item.setPrice(updatedItem.getPrice());
+            item.setCategoryId(updatedItem.getCategoryId());
             item.setUpdatedAt(LocalDateTime.now());
             
             return itemRepository.save(item);
@@ -86,18 +99,50 @@ public class ItemService {
         return itemRepository.findByKeyword(keyword.trim());
     }
     
-    // 在庫状況でフィルタ
-    public List<Item> getItemsByStockStatus(boolean inStock) {
+    // 在庫状況でフィルタ（Integer型）
+    public List<Item> getItemsByStockStatus(Integer inStock) {
         return itemRepository.findByInStock(inStock);
+    }
+    
+    // 在庫状況でフィルタ（boolean型 - 互換性維持）
+    public List<Item> getItemsByStockStatus(boolean inStock) {
+        return itemRepository.findByInStock(inStock ? 1 : 0);
+    }
+    
+    // 在庫有りアイテム取得
+    public List<Item> getInStockItems() {
+        return itemRepository.findInStockItems();
+    }
+    
+    // 在庫切れアイテム取得
+    public List<Item> getOutOfStockItems() {
+        return itemRepository.findOutOfStockItems();
+    }
+    
+    // 在庫僅少アイテム取得（数量が指定値以下）
+    public List<Item> getLowStockItems(Integer threshold) {
+        return itemRepository.findLowStockItems(threshold != null ? threshold : 5);
+    }
+    
+    // 価格範囲で検索
+    public List<Item> getItemsByPriceRange(Integer minPrice, Integer maxPrice) {
+        return itemRepository.findByPriceRange(
+            minPrice != null ? minPrice : 0,
+            maxPrice != null ? maxPrice : Integer.MAX_VALUE
+        );
     }
     
     // 統計情報取得
     public ItemStats getItemStats() {
         long totalItems = itemRepository.count();
-        long inStockItems = itemRepository.countByInStock(true);
-        long outOfStockItems = itemRepository.countByInStock(false);
+        long inStockItems = itemRepository.countByInStock(1);
+        long outOfStockItems = itemRepository.countByInStock(0);
+        Long totalQuantity = itemRepository.getTotalInStockQuantity();
+        Long totalAssetValue = itemRepository.getTotalAssetValue();
         
-        return new ItemStats(totalItems, inStockItems, outOfStockItems);
+        return new ItemStats(totalItems, inStockItems, outOfStockItems, 
+                           totalQuantity != null ? totalQuantity : 0L,
+                           totalAssetValue != null ? totalAssetValue : 0L);
     }
     
     // 統計情報クラス
@@ -105,16 +150,23 @@ public class ItemService {
         private final long totalItems;
         private final long inStockItems;
         private final long outOfStockItems;
+        private final long totalQuantity;
+        private final long totalAssetValue;
         
-        public ItemStats(long totalItems, long inStockItems, long outOfStockItems) {
+        public ItemStats(long totalItems, long inStockItems, long outOfStockItems, 
+                        long totalQuantity, long totalAssetValue) {
             this.totalItems = totalItems;
             this.inStockItems = inStockItems;
             this.outOfStockItems = outOfStockItems;
+            this.totalQuantity = totalQuantity;
+            this.totalAssetValue = totalAssetValue;
         }
         
         public long getTotalItems() { return totalItems; }
         public long getInStockItems() { return inStockItems; }
         public long getOutOfStockItems() { return outOfStockItems; }
+        public long getTotalQuantity() { return totalQuantity; }
+        public long getTotalAssetValue() { return totalAssetValue; }
         public double getStockRatio() { 
             return totalItems > 0 ? (double) inStockItems / totalItems * 100 : 0; 
         }
