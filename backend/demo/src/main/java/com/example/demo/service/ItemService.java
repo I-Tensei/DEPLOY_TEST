@@ -39,14 +39,19 @@ public class ItemService {
             throw new RuntimeException("備品番号が既に存在します: " + item.getItemNumber());
         }
         
-        // 在庫フラグのデフォルト設定（boolean値をInteger型に変換）
-        if (item.getInStockInt() == null) {
-            item.setInStockInt(1);  // デフォルトは在庫有り
-        }
-        
         // 数量のデフォルト設定
         if (item.getQuantity() == null) {
             item.setQuantity(1);
+        }
+        
+        // 価格のデフォルト設定
+        if (item.getPrice() == null) {
+            item.setPrice(0.0);
+        }
+        
+        // カテゴリIDのデフォルト設定
+        if (item.getCategoryId() == null) {
+            item.setCategoryId(1);
         }
         
         item.setRegisteredAt(LocalDateTime.now());
@@ -71,9 +76,18 @@ public class ItemService {
             item.setModelNumber(updatedItem.getModelNumber());
             item.setInStock(updatedItem.isInStock());  // boolean値で設定
             item.setRemarks(updatedItem.getRemarks());
-            item.setQuantity(updatedItem.getQuantity());
-            item.setPrice(updatedItem.getPrice());
-            item.setCategoryId(updatedItem.getCategoryId());
+            
+            // 既存の値を保持する項目
+            if (updatedItem.getQuantity() != null) {
+                item.setQuantity(updatedItem.getQuantity());
+            }
+            if (updatedItem.getPrice() != null) {
+                item.setPrice(updatedItem.getPrice());
+            }
+            if (updatedItem.getCategoryId() != null) {
+                item.setCategoryId(updatedItem.getCategoryId());
+            }
+            
             item.setUpdatedAt(LocalDateTime.now());
             
             return itemRepository.save(item);

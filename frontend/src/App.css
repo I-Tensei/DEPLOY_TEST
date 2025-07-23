@@ -479,3 +479,109 @@ body {
     padding: 10px 20px;
   }
 }
+/* 既存のスタイルに以下を追加 */
+
+/* 操作ボタンのスタイル */
+.action-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+
+.lend-btn {
+  background-color: #ff6b6b;
+  color: white;
+}
+
+.lend-btn:hover {
+  background-color: #ff5252;
+}
+
+.return-btn {
+  background-color: #4ecdc4;
+  color: white;
+}
+
+.return-btn:hover {
+  background-color: #26a69a;
+}
+
+/* 備考編集のスタイル */
+.remarks-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-remarks-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+
+.edit-remarks-btn:hover {
+  opacity: 1;
+}
+
+.edit-remarks {
+  min-width: 200px;
+}
+
+.edit-remarks textarea {
+  width: 100%;
+  padding: 4px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.edit-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.save-btn, .cancel-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.save-btn {
+  background-color: #4caf50;
+  color: white;
+}
+
+.cancel-btn {
+  background-color: #f44336;
+  color: white;
+}
+
+.save-btn:hover {
+  background-color: #45a049;
+}
+
+.cancel-btn:hover {
+  background-color: #da190b;
+}
+
+/* レポートセクションの改良 */
+.item-remarks {
+  color: #666;
+  font-style: italic;
+}
+
+/* 状態バッジの改良 */
+.out-of-stock {
+  background-color: #ffeb3b !important;
+  color: #333 !important;
+}
