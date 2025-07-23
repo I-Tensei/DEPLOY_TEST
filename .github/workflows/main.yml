@@ -1,4 +1,4 @@
-name: Build and Deploy Spring Boot App
+name: Build and Deploy Spring Boot App via Bastion
 
 on:
   push:
@@ -48,141 +48,61 @@ jobs:
           }
           EOF
 
-      # ④ コンパイルエラーの根本的修正 - 最小限のコントローラーに置き換え
-      - name: Fix ItemController compilation errors
-        working-directory: backend/demo
-        run: |
-          # 最小限で動作するItemControllerに置き換え
-          cat > src/main/java/com/example/demo/controller/ItemController.java << 'EOF'
-          package com.example.demo.controller;
-          
-          import com.example.demo.entity.Item;
-          import com.example.demo.service.ItemService;
-          import org.springframework.beans.factory.annotation.Autowired;
-          import org.springframework.http.HttpStatus;
-          import org.springframework.http.ResponseEntity;
-          import org.springframework.web.bind.annotation.*;
-          
-          import java.util.List;
-          import java.util.Optional;
-          
-          @RestController
-          @CrossOrigin(origins = "*")
-          public class ItemController {
-              
-              @Autowired
-              private ItemService itemService;
-              
-              // 全件取得 (API版)
-              @GetMapping("/api/items")
-              public ResponseEntity<List<Item>> getAllItemsApi() {
-                  List<Item> items = itemService.getAllItems();
-                  return ResponseEntity.ok(items);
-              }
-              
-              // 全件取得 (従来版)
-              @GetMapping("/items")
-              public ResponseEntity<List<Item>> getAllItems() {
-                  List<Item> items = itemService.getAllItems();
-                  return ResponseEntity.ok(items);
-              }
-              
-              // ID指定取得 (API版)
-              @GetMapping("/api/items/{id}")
-              public ResponseEntity<Item> getItemByIdApi(@PathVariable Long id) {
-                  Optional<Item> item = itemService.getItemById(id);
-                  return item.map(ResponseEntity::ok)
-                            .orElse(ResponseEntity.notFound().build());
-              }
-              
-              // 新規作成 (API版)
-              @PostMapping("/api/items")
-              public ResponseEntity<Item> createItemApi(@RequestBody Item item) {
-                  try {
-                      Item createdItem = itemService.createItem(item);
-                      return ResponseEntity.status(HttpStatus.CREATED).body(createdItem);
-                  } catch (RuntimeException e) {
-                      return ResponseEntity.badRequest().build();
-                  }
-              }
-              
-              // 更新
-              @PutMapping("/api/items/{id}")
-              public ResponseEntity<Item> updateItem(@PathVariable Long id, @RequestBody Item item) {
-                  try {
-                      Item updatedItem = itemService.updateItem(id, item);
-                      return ResponseEntity.ok(updatedItem);
-                  } catch (RuntimeException e) {
-                      return ResponseEntity.notFound().build();
-                  }
-              }
-              
-              // 削除
-              @DeleteMapping("/api/items/{id}")
-              public ResponseEntity<Void> deleteItem(@PathVariable Long id) {
-                  try {
-                      itemService.deleteItem(id);
-                      return ResponseEntity.noContent().build();
-                  } catch (RuntimeException e) {
-                      return ResponseEntity.notFound().build();
-                  }
-              }
-              
-              // キーワード検索
-              @GetMapping("/api/items/search")
-              public ResponseEntity<List<Item>> searchItems(@RequestParam String keyword) {
-                  List<Item> items = itemService.searchItems(keyword);
-                  return ResponseEntity.ok(items);
-              }
-              
-              // 統計情報取得 (API版)
-              @GetMapping("/api/items/stats")
-              public ResponseEntity<ItemService.StatsInfo> getItemStats() {
-                  ItemService.StatsInfo stats = itemService.getStats();
-                  return ResponseEntity.ok(stats);
-              }
-          }
-          EOF
-
-      # ⑤ JUnitテストを実行（エラー時は継続）
+      # ④ JUnitテストを実行（エラー時は継続）
       - name: Run JUnit tests
         working-directory: backend/demo
         run: mvn test -Dspring.profiles.active=dev
         continue-on-error: true
 
-      # ⑥ Maven で Spring Boot アプリをビルド（テストは省略）
+      # ⑤ Maven で Spring Boot アプリをビルド（テストは省略）
       - name: Build with Maven
         working-directory: backend/demo
         run: mvn clean package -DskipTests
 
-      # ⑦ JAR ファイルを EC2 にアップロード
-      - name: Upload JAR to EC2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          source: backend/demo/target/demo-0.0.1-SNAPSHOT.jar
-          target: /home/ec2-user/app/
-          strip_components: 3
-
-      # ⑧ EC2 上で環境設定とSpring Boot アプリを再起動
-      - name: Deploy and restart app on EC2
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            # アプリケーションディレクトリの作成
-            mkdir -p /home/ec2-user/app
+      # ⑥ SSH秘密鍵の設定
+      - name: Setup SSH keys
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.BASTION_PRIVATE_KEY }}" > ~/.ssh/bastion_key
+          echo "${{ secrets.PRIVATE_EC2_KEY }}" > ~/.ssh/private_key
+          chmod 600 ~/.ssh/bastion_key
+          chmod 600 ~/.ssh/private_key
+          
+          # SSH設定ファイルを作成
+          cat > ~/.ssh/config << EOF
+          Host bastion
+            HostName ${{ secrets.BASTION_HOST }}
+            User ${{ secrets.BASTION_USER }}
+            IdentityFile ~/.ssh/bastion_key
+            StrictHostKeyChecking no
             
+          Host private-ec2
+            HostName ${{ secrets.PRIVATE_EC2_IP }}
+            User ${{ secrets.PRIVATE_EC2_USER }}
+            IdentityFile ~/.ssh/private_key
+            ProxyJump bastion
+            StrictHostKeyChecking no
+          EOF
+
+      # ⑦ バスチオン経由でJARファイルをプライベートEC2にアップロード
+      - name: Upload JAR to Private EC2 via Bastion
+        run: |
+          # プライベートEC2にアプリケーションディレクトリを作成
+          ssh private-ec2 "mkdir -p /home/ec2-user/app"
+          
+          # JARファイルをアップロード
+          scp backend/demo/target/demo-0.0.1-SNAPSHOT.jar private-ec2:/home/ec2-user/app/
+
+      # ⑧ プライベートEC2上でSpring Boot アプリを再起動
+      - name: Deploy and restart app on Private EC2
+        run: |
+          ssh private-ec2 << 'EOF'
             # 既存のJavaプロセスを停止
             pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
             sudo systemctl stop demoapp || true
             
-            # systemdサービスファイルを作成（メモリ設定追加）
-            sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOF
+            # systemdサービスファイルを作成
+            sudo tee /etc/systemd/system/demoapp.service > /dev/null <<EOL
             [Unit]
             Description=Demo Spring Boot Application
             After=network.target
@@ -191,8 +111,7 @@ jobs:
             Type=simple
             User=ec2-user
             WorkingDirectory=/home/ec2-user/app
-            Environment="JAVA_OPTS=-Xmx512m -Xms256m"
-            ExecStart=/usr/bin/java \$JAVA_OPTS -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev --server.port=8080 --server.address=0.0.0.0 --logging.level.root=INFO --spring.datasource.url=jdbc:h2:file:/home/ec2-user/app/h2db --spring.h2.console.enabled=true
+            ExecStart=/usr/bin/java -Xmx512m -Xms256m -jar /home/ec2-user/app/demo-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod --server.port=8080 --server.address=0.0.0.0 --logging.level.root=INFO --spring.datasource.url=jdbc:h2:file:/home/ec2-user/app/h2db --spring.h2.console.enabled=true
             Restart=always
             RestartSec=10
             StandardOutput=journal
@@ -202,33 +121,48 @@ jobs:
 
             [Install]
             WantedBy=multi-user.target
-            EOF
+            EOL
+            
+            # H2データベースディレクトリの権限設定
+            sudo chown -R ec2-user:ec2-user /home/ec2-user/app
+            sudo chmod -R 755 /home/ec2-user/app
             
             # systemdを再読み込み
             sudo systemctl daemon-reload
+            
+            # 失敗状態をリセット
+            sudo systemctl reset-failed demoapp || true
             
             # サービスを有効化・開始
             sudo systemctl enable demoapp
             sleep 3
             sudo systemctl start demoapp
             
-            # 起動確認（より長い待機時間）
-            sleep 20
-            sudo systemctl status demoapp --no-pager --lines=15
+            # 起動確認
+            sleep 15
+            echo "=== Service Status ==="
+            sudo systemctl status demoapp --no-pager --lines=20
+            
+            echo "=== Recent Journal Logs ==="
+            sudo journalctl -u demoapp --since "2 minutes ago" --no-pager --lines=50
             
             # アプリケーションが応答するかテスト
-            for i in {1..10}; do
+            echo "=== API Response Test ==="
+            for i in {1..12}; do
                 if curl -f http://localhost:8080/items >/dev/null 2>&1; then
                     echo "Application is responding successfully!"
                     break
-                elif [ $i -eq 10 ]; then
-                    echo "Application failed to respond after 10 attempts"
-                    sudo journalctl -u demoapp --since "2 minutes ago" --no-pager --lines=30
+                elif [ \$i -eq 12 ]; then
+                    echo "Application failed to respond after 12 attempts"
+                    echo "=== Final Error Logs ==="
+                    sudo journalctl -u demoapp --since "5 minutes ago" --no-pager --lines=100
+                    exit 1
                 else
-                    echo "Attempt $i: Application not yet ready, waiting..."
+                    echo "Attempt \$i: Application not yet ready, waiting..."
                     sleep 10
                 fi
             done
+          EOF
       
       # ⑨ Node.js をセットアップ
       - name: Set up Node.js
@@ -241,27 +175,23 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          # APIエンドポイントをプライベートEC2のIPに設定
+          sed -i 's|http://ec2-.*\.amazonaws\.com:8080|http://172.27.11.203:8080|g' src/App.js
           npm run build
               
-      # ⑪ ビルド成果物をEC2にアップロード
-      - name: Upload React build to EC2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          source: frontend/build/*
-          target: /home/ec2-user/frontend_build/
-          strip_components: 2
+      # ⑪ ビルド成果物をプライベートEC2にアップロード
+      - name: Upload React build to Private EC2 via Bastion
+        run: |
+          # フロントエンドビルドディレクトリを作成
+          ssh private-ec2 "mkdir -p /home/ec2-user/frontend_build"
+          
+          # ビルド成果物をアップロード
+          scp -r frontend/build/* private-ec2:/home/ec2-user/frontend_build/
         
-      # ⑫ EC2上でNginxのセットアップとReactアプリのデプロイ
-      - name: Setup Nginx and Deploy React app
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
+      # ⑫ プライベートEC2上でNginxのセットアップとReactアプリのデプロイ
+      - name: Setup Nginx and Deploy React app on Private EC2
+        run: |
+          ssh private-ec2 << 'EOF'
             # Nginxがインストールされていない場合はインストール
             if ! command -v nginx &> /dev/null; then
               sudo dnf update -y
@@ -271,11 +201,6 @@ jobs:
             # Nginxを起動・有効化
             sudo systemctl start nginx
             sudo systemctl enable nginx
-            
-            # ファイアウォール設定
-            sudo firewall-cmd --permanent --add-service=http >/dev/null 2>&1 || true
-            sudo firewall-cmd --permanent --add-port=8080/tcp >/dev/null 2>&1 || true
-            sudo firewall-cmd --reload >/dev/null 2>&1 || true
             
             # 古いファイルを削除してから新しいファイルをコピー
             sudo rm -rf /usr/share/nginx/html/*
@@ -293,5 +218,8 @@ jobs:
             sudo systemctl status nginx --no-pager --lines=5
             echo "=== Demo App Status ==="
             sudo systemctl status demoapp --no-pager --lines=5
-            echo "=== Recent App Logs ==="
-            sudo journalctl -u demoapp --since "2 minutes ago" --no-pager --lines=10
+            echo "=== Network Configuration ==="
+            ip addr show
+            echo "=== Nginx Access Test ==="
+            curl -I http://localhost/ || echo "Nginx test failed"
+          EOF
