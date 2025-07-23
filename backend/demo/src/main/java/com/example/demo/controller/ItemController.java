@@ -13,36 +13,32 @@ import java.util.Optional;
 @RestController
 @CrossOrigin(origins = "*")
 public class ItemController {
-
+    
     @Autowired
     private ItemService itemService;
-
-    // 既存のフロントエンドとの互換性維持
-    @GetMapping("/items")
-    public List<Item> getAllItems() {
-        return itemService.getAllItems();
-    }
-
-    @PostMapping("/items")
-    public Item createItem(@RequestBody Item item) {
-        return itemService.createItem(item);
-    }
-
-    // RESTful API用エンドポイント
+    
+    // 全件取得 (API版)
     @GetMapping("/api/items")
     public ResponseEntity<List<Item>> getAllItemsApi() {
         List<Item> items = itemService.getAllItems();
         return ResponseEntity.ok(items);
     }
-
-    // ID で取得
+    
+    // 全件取得 (従来版)
+    @GetMapping("/items")
+    public ResponseEntity<List<Item>> getAllItems() {
+        List<Item> items = itemService.getAllItems();
+        return ResponseEntity.ok(items);
+    }
+    
+    // ID指定取得 (API版)
     @GetMapping("/api/items/{id}")
-    public ResponseEntity<Item> getItemById(@PathVariable Long id) {
+    public ResponseEntity<Item> getItemByIdApi(@PathVariable Long id) {
         Optional<Item> item = itemService.getItemById(id);
         return item.map(ResponseEntity::ok)
                   .orElse(ResponseEntity.notFound().build());
     }
-
+    
     // 新規作成 (API版)
     @PostMapping("/api/items")
     public ResponseEntity<Item> createItemApi(@RequestBody Item item) {
@@ -53,7 +49,7 @@ public class ItemController {
             return ResponseEntity.badRequest().build();
         }
     }
-
+    
     // 更新
     @PutMapping("/api/items/{id}")
     public ResponseEntity<Item> updateItem(@PathVariable Long id, @RequestBody Item item) {
@@ -64,7 +60,7 @@ public class ItemController {
             return ResponseEntity.notFound().build();
         }
     }
-
+    
     // 削除
     @DeleteMapping("/api/items/{id}")
     public ResponseEntity<Void> deleteItem(@PathVariable Long id) {
@@ -75,21 +71,21 @@ public class ItemController {
             return ResponseEntity.notFound().build();
         }
     }
-
-    // 検索
+    
+    // キーワード検索
     @GetMapping("/api/items/search")
     public ResponseEntity<List<Item>> searchItems(@RequestParam String keyword) {
         List<Item> items = itemService.searchItems(keyword);
         return ResponseEntity.ok(items);
     }
 
-    // 在庫状況でフィルタ
+    // 在庫状況でフィルタ（修正版）
     @GetMapping("/api/items/filter")
     public ResponseEntity<List<Item>> filterByStock(@RequestParam boolean inStock) {
-        List<Item> items = itemService.getItemsByStockStatus(inStock);
+        List<Item> items = inStock ? itemService.getInStockItems() : itemService.getOutOfStockItems();
         return ResponseEntity.ok(items);
     }
-
+    
     // 統計情報取得 (API版)
     @GetMapping("/api/items/stats")
     public ResponseEntity<ItemService.StatsInfo> getItemStats() {

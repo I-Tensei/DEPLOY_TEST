@@ -19,13 +19,15 @@ function App() {
     fetchItems();
   }, []);
 
-  const fetchItems = async () => {
+ const fetchItems = async () => {
     try {
-      const res = await fetch('http://ec2-18-219-230-59.us-east-2.compute.amazonaws.com:8080/items');
+      // ローカル環境用に変更
+      const res = await fetch('http://localhost:8080/items');
       const data = await res.json();
       setItems(data);
     } catch (error) {
       console.error('取得エラー:', error);
+      alert('データの取得に失敗しました: ' + error.message);
     }
   };
 
@@ -33,17 +35,27 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://ec2-18-219-230-59.us-east-2.compute.amazonaws.com:8080/items', {
+      console.log('送信データ:', newItem); // デバッグ用
+      // ローカル環境用に変更し、/api/itemsエンドポイントを使用
+      const res = await fetch('http://localhost:8080/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItem),
       });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
       const data = await res.json();
-      setItems([...items, data]);
+      console.log('登録結果:', data); // デバッグ用
+      setItems([data, ...items]); // 新しいアイテムを先頭に追加
       setNewItem({ itemNumber: '', itemName: '', modelNumber: '', inStock: true, remarks: '' });
       setActiveMenu('dashboard'); // 登録後はダッシュボードに戻る
+      alert('登録が完了しました！');
     } catch (error) {
       console.error('登録エラー:', error);
+      alert('登録に失敗しました: ' + error.message);
     }
   };
 
