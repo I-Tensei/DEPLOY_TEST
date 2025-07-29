@@ -17,7 +17,7 @@ public class ItemController {
     @Autowired
     private ItemService itemService;
     
-    // 全件取得 (API版)
+    // 全件取得 (API版) 
     @GetMapping("/api/items")
     public ResponseEntity<List<Item>> getAllItemsApi() {
         List<Item> items = itemService.getAllItems();
