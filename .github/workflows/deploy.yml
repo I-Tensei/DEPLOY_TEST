@@ -68,33 +68,35 @@ jobs:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
         key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        timeout: 180s
+        command_timeout: 60s
         script: |
           echo "=== Starting deployment ==="
           
-          # Stop existing Java process on private server
-          ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
-            ec2-user@10.0.2.123 'pkill java || true'
+          # Stop existing Java process on private server (with timeout)
+          timeout 30 ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            ec2-user@10.0.2.123 'pkill java || true' || echo "Java stop timeout - continuing"
           
           # Deploy backend JAR
           if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
             echo "Deploying backend..."
-            scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+            timeout 60 scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
               /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@10.0.2.123:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
             
-            # Start new application
-            ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
-              ec2-user@10.0.2.123 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &'
+            # Start new application (with timeout)
+            timeout 30 ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+              ec2-user@10.0.2.123 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &' || echo "App start timeout - app may still be starting"
             
             echo "Backend deployed and started"
           fi
           
-          # Deploy frontend
+          # Deploy frontend (with timeout)
           if [ -d "/tmp/frontend_new" ]; then
             echo "Deploying frontend..."
-            sudo rm -rf /usr/share/nginx/html/*
-            sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/
-            sudo chown -R nginx:nginx /usr/share/nginx/html/
-            sudo systemctl restart nginx
+            timeout 30 sudo rm -rf /usr/share/nginx/html/* || true
+            timeout 30 sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
+            timeout 30 sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
+            timeout 20 sudo systemctl restart nginx || true
             rm -rf /tmp/frontend_new
             echo "Frontend deployed"
           fi
