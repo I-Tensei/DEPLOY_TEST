@@ -50,15 +50,23 @@ jobs:
       run: |
         echo "=== Starting deployment process ==="
         
+        # デバッグ情報
+        echo "Host: ${HOST_NAME}"
+        echo "User: ${USER_NAME}"
+        echo "Private key length: ${#PRIVATE_KEY}"
+        
         # SSH秘密鍵を設定
         echo "$PRIVATE_KEY" > private_key
         chmod 600 private_key
         
-        # SSH接続テスト
+        # 秘密鍵の検証
+        ssh-keygen -l -f private_key || echo "Key validation failed"
+        
+        # SSH接続テスト（詳細ログ）
         echo "Testing SSH connection to bastion host: ${HOST_NAME}"
         ssh -i private_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
-          -o UserKnownHostsFile=/dev/null ${USER_NAME}@${HOST_NAME} \
-          'echo "✓ Bastion host connection successful"'
+          -o UserKnownHostsFile=/dev/null -v ${USER_NAME}@${HOST_NAME} \
+          'echo "✓ Bastion host connection successful"' 2>&1 | head -20
         
         # バックエンドのデプロイ
         echo "=== Backend Deployment ==="
