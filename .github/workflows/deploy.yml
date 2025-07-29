@@ -42,25 +42,6 @@ jobs:
         npm ci
         npm run build
 
-    - name: Deploy with SSH Action
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        script: |
-          echo "=== Deployment started ==="
-          
-          # Stop existing Java process on private server
-          ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
-            ec2-user@10.0.2.123 'pkill java || true; sleep 3'
-          
-          # Start application (use existing JAR)
-          ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
-            ec2-user@10.0.2.123 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 & sleep 5'
-          
-          echo "✓ Deployment completed"
-
     - name: Upload JAR to Server
       uses: appleboy/scp-action@v0.1.4
       with:
@@ -81,26 +62,41 @@ jobs:
         target: "/tmp/frontend_new/"
         strip_components: 2
 
-    - name: Final Deploy
+    - name: Deploy Application
       uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ec2-user
         key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
         script: |
-          # Deploy backend
+          echo "=== Starting deployment ==="
+          
+          # Stop existing Java process on private server
+          ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+            ec2-user@10.0.2.123 'pkill java || true'
+          
+          # Deploy backend JAR
           if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
+            echo "Deploying backend..."
             scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
               /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@10.0.2.123:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
+            
+            # Start new application
+            ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+              ec2-user@10.0.2.123 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &'
+            
+            echo "Backend deployed and started"
           fi
           
           # Deploy frontend
           if [ -d "/tmp/frontend_new" ]; then
+            echo "Deploying frontend..."
             sudo rm -rf /usr/share/nginx/html/*
             sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/
             sudo chown -R nginx:nginx /usr/share/nginx/html/
             sudo systemctl restart nginx
             rm -rf /tmp/frontend_new
+            echo "Frontend deployed"
           fi
           
-          echo "=== All deployments completed ==="
+          echo "✓ All deployments completed"
