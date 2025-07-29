@@ -61,6 +61,13 @@
             <scope>runtime</scope>
         </dependency>
         
+        <!-- MariaDB Driver (本番用) -->
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        
         <!-- PostgreSQL Driver (本番用オプション) -->
         <dependency>
             <groupId>org.postgresql</groupId>
