@@ -46,7 +46,7 @@ public class ItemService {
         
         // 価格のデフォルト設定
         if (item.getPrice() == null) {
-            item.setPrice(0.0);
+            item.setPrice(0);  // Integer型に修正
         }
         
         // カテゴリIDのデフォルト設定
@@ -74,7 +74,7 @@ public class ItemService {
             item.setItemNumber(updatedItem.getItemNumber());
             item.setItemName(updatedItem.getItemName());
             item.setModelNumber(updatedItem.getModelNumber());
-            item.setInStock(updatedItem.isInStock());  // boolean値で設定
+            item.setInStock(updatedItem.isInStock());  // boolean メソッドを使用
             item.setRemarks(updatedItem.getRemarks());
             
             // 既存の値を保持する項目
@@ -115,12 +115,12 @@ public class ItemService {
     
     // 在庫有りアイテム取得
     public List<Item> getInStockItems() {
-        return itemRepository.findByInStock(1);  // 1 = 在庫有り
+        return itemRepository.findByInStockInt(1);  // 1 = 在庫有り
     }
     
     // 在庫切れアイテム取得
     public List<Item> getOutOfStockItems() {
-        return itemRepository.findByInStock(0);  // 0 = 在庫切れ
+        return itemRepository.findByInStockInt(0);  // 0 = 在庫切れ
     }
     
     // カテゴリ別アイテム取得
@@ -155,7 +155,7 @@ public class ItemService {
     // 統計情報取得
     public StatsInfo getStats() {
         long totalItems = itemRepository.count();
-        long inStockItems = itemRepository.countByInStock(1);
+        long inStockItems = itemRepository.countByInStockInt(1);
         long outOfStockItems = totalItems - inStockItems;
         double stockRatio = totalItems > 0 ? (double) inStockItems / totalItems * 100.0 : 0.0;
         
