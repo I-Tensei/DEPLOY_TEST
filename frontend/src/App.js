@@ -8,7 +8,10 @@ function App() {
     itemName: '',
     modelNumber: '',
     inStock: true,
-    remarks: ''
+    remarks: '',
+    categoryId: 1,
+    quantity: 1,
+    price: 0
   });
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,7 +54,7 @@ function App() {
       const data = await res.json();
       console.log('登録結果:', data);
       setItems([data, ...items]);
-      setNewItem({ itemNumber: '', itemName: '', modelNumber: '', inStock: true, remarks: '' });
+      setNewItem({ itemNumber: '', itemName: '', modelNumber: '', inStock: true, remarks: '', categoryId: 1, quantity: 1, price: 0 });
       setActiveMenu('dashboard');
       alert('登録が完了しました！');
     } catch (error) {
@@ -378,6 +381,46 @@ function App() {
                       <option value="true">在庫有り</option>
                       <option value="false">貸出中</option>
                     </select>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label htmlFor="categoryId">カテゴリID *</label>
+                    <select
+                      id="categoryId"
+                      value={newItem.categoryId}
+                      onChange={e => setNewItem({...newItem, categoryId: parseInt(e.target.value)})}
+                      required
+                    >
+                      <option value={1}>1 - 電子機器</option>
+                      <option value={2}>2 - 事務用品</option>
+                      <option value={3}>3 - その他</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="quantity">数量 *</label>
+                    <input
+                      id="quantity"
+                      type="number"
+                      min="1"
+                      value={newItem.quantity}
+                      onChange={e => setNewItem({...newItem, quantity: parseInt(e.target.value)})}
+                      required
+                      placeholder="例: 1"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="price">価格 *</label>
+                    <input
+                      id="price"
+                      type="number"
+                      min="0"
+                      value={newItem.price}
+                      onChange={e => setNewItem({...newItem, price: parseInt(e.target.value)})}
+                      required
+                      placeholder="例: 50000"
+                    />
                   </div>
                   
                   <div className="form-group">
