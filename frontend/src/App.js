@@ -23,8 +23,8 @@ function App() {
 
   const fetchItems = async () => {
     try {
-      // ローカル環境用に変更
-      const res = await fetch('http://localhost:8080/items');
+      // Nginx経由でAPIにアクセス
+      const res = await fetch('/api/items');
       const data = await res.json();
       setItems(data);
     } catch (error) {
@@ -38,7 +38,7 @@ function App() {
     e.preventDefault();
     try {
       console.log('送信データ:', newItem);
-      const res = await fetch('http://localhost:8080/api/items', {
+      const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItem),
@@ -68,7 +68,7 @@ function App() {
         inStock: !item.inStock
       };
       
-      const res = await fetch(`http://localhost:8080/api/items/${item.id}`, {
+      const res = await fetch(`/api/items/${item.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedItem),
@@ -103,7 +103,7 @@ function App() {
         remarks: editRemarks
       };
       
-      const res = await fetch(`http://localhost:8080/api/items/${editingItem.id}`, {
+      const res = await fetch(`/api/items/${editingItem.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedItem),
