@@ -50,23 +50,68 @@ jobs:
       run: |
         echo "=== Starting deployment process ==="
         
-        # デバッグ情報
-        echo "Host: ${HOST_NAME}"
-        echo "User: ${USER_NAME}"
-        echo "Private key length: ${#PRIVATE_KEY}"
-        
         # SSH秘密鍵を設定
         echo "$PRIVATE_KEY" > private_key
         chmod 600 private_key
         
-        # 秘密鍵の検証
-        ssh-keygen -l -f private_key || echo "Key validation failed"
-        
-        # SSH接続テスト（詳細ログ）
+        # SSH接続テスト（シンプルなアプローチ）
         echo "Testing SSH connection to bastion host: ${HOST_NAME}"
-        ssh -i private_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
-          -o UserKnownHostsFile=/dev/null -v ${USER_NAME}@${HOST_NAME} \
-          'echo "✓ Bastion host connection successful"' 2>&1 | head -20
+        ssh -i private_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          ${USER_NAME}@${HOST_NAME} 'echo "✓ Bastion host connection successful"'
+        
+        # バックエンドのデプロイ
+        echo "=== Backend Deployment ==="
+        
+        # JARファイルをバスティオンホストに転送
+        echo "Uploading JAR file to bastion host..."
+        scp -i private_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          backend/demo/target/demo-0.0.1-SNAPSHOT.jar ${USER_NAME}@${HOST_NAME}:/tmp/demo-app.jar
+        
+        # プライベートサーバーへのデプロイ（シンプル化）
+        echo "Deploying to private server..."
+        ssh -i private_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          ${USER_NAME}@${HOST_NAME} '
+          # プライベートサーバーの既存Javaプロセスを停止
+          ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            ec2-user@10.0.2.123 "pkill java || true; sleep 3"
+          
+          # JARファイルをプライベートサーバーに転送
+          scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            /tmp/demo-app.jar ec2-user@10.0.2.123:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
+          
+          # プライベートサーバーでアプリケーションを起動
+          ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            ec2-user@10.0.2.123 "cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 & sleep 5"
+          
+          rm -f /tmp/demo-app.jar
+          echo "✓ Backend deployment completed"
+        '
+        
+        # フロントエンドのデプロイ
+        echo "=== Frontend Deployment ==="
+        
+        # フロントエンドファイルをバスティオンホストに転送
+        echo "Uploading frontend files to bastion host..."
+        ssh -i private_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          ${USER_NAME}@${HOST_NAME} 'sudo rm -rf /usr/share/nginx/html/* && rm -rf ~/frontend_tmp && mkdir -p ~/frontend_tmp'
+        
+        scp -i private_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          -r frontend/build/* ${USER_NAME}@${HOST_NAME}:~/frontend_tmp/
+        
+        # Nginxにデプロイ
+        echo "Deploying to Nginx..."
+        ssh -i private_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          ${USER_NAME}@${HOST_NAME} '
+          sudo cp -r ~/frontend_tmp/* /usr/share/nginx/html/
+          sudo chown -R nginx:nginx /usr/share/nginx/html/
+          sudo systemctl restart nginx
+          rm -rf ~/frontend_tmp
+          echo "✓ Frontend deployment completed"
+        '
+        
+        # クリーンアップ
+        rm -f private_key
+        echo "=== Deployment completed successfully ==="
         
         # バックエンドのデプロイ
         echo "=== Backend Deployment ==="
