@@ -442,7 +442,7 @@ function App() {
             </div>
           )}
 
-          {/* レポート */}
+          {/* レポート 　*/}
           {activeMenu === 'reports' && (
             <div className="reports">
               <h1>レポート</h1>
