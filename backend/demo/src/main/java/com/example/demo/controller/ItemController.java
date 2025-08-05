@@ -41,12 +41,37 @@ public class ItemController {
     
     // 新規作成 (API版)
     @PostMapping("/api/items")
-    public ResponseEntity<Item> createItemApi(@RequestBody Item item) {
+    public ResponseEntity<?> createItemApi(@RequestBody Item item) {
         try {
             Item createdItem = itemService.createItem(item);
             return ResponseEntity.status(HttpStatus.CREATED).body(createdItem);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().build();
+            // 重複エラーやバリデーションエラーの詳細を返す
+            String errorMessage = e.getMessage();
+            if (errorMessage != null && errorMessage.contains("duplicate") || 
+                errorMessage.contains("Duplicate") || errorMessage.contains("unique")) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ErrorResponse("備品番号が既に登録されています。別の番号を入力してください。"));
+            }
+            return ResponseEntity.badRequest()
+                .body(new ErrorResponse("登録に失敗しました: " + errorMessage));
+        }
+    }
+    
+    // エラーレスポンス用のクラス
+    public static class ErrorResponse {
+        private String error;
+        
+        public ErrorResponse(String error) {
+            this.error = error;
+        }
+        
+        public String getError() {
+            return error;
+        }
+        
+        public void setError(String error) {
+            this.error = error;
         }
     }
     

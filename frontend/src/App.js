@@ -48,7 +48,16 @@ function App() {
       });
       
       if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+        // エラーレスポンスを解析
+        const errorData = await res.json().catch(() => null);
+        
+        if (res.status === 409) { // Conflict - 重複エラー
+          throw new Error(errorData?.error || '備品番号が既に登録されています。');
+        } else if (res.status === 400) { // Bad Request - バリデーションエラー
+          throw new Error(errorData?.error || '入力内容に問題があります。');
+        } else {
+          throw new Error(`登録に失敗しました (${res.status})`);
+        }
       }
       
       const data = await res.json();
@@ -59,7 +68,7 @@ function App() {
       alert('登録が完了しました！');
     } catch (error) {
       console.error('登録エラー:', error);
-      alert('登録に失敗しました: ' + error.message);
+      alert(error.message);
     }
   };
 
