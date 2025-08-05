@@ -42,6 +42,17 @@ jobs:
         npm ci
         npm run build
 
+    # Bastion EC2へのフロントエンドアップロード
+    - name: Upload frontend to Bastion
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.BASTION_HOST }}
+        username: ec2-user
+        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        source: "frontend/build"
+        target: "/tmp/frontend_new"
+        strip_components: 2
+
     # Bastion EC2へのデプロイ
     - name: Upload JAR to Bastion
       uses: appleboy/scp-action@v0.1.4
@@ -94,6 +105,16 @@ jobs:
               ec2-user@${{ secrets.BASTION_HOST }} 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &' || echo "App start timeout - app may still be starting"
             
             echo "Backend deployed and started on Bastion"
+          fi
+
+          # Deploy frontend to Bastion (with timeout)
+          if [ -d "/tmp/frontend_new" ]; then
+            echo "Deploying frontend to Bastion..."
+            timeout 30 sudo rm -rf /usr/share/nginx/html/* || true
+            timeout 30 sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
+            timeout 30 sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
+            rm -rf /tmp/frontend_new
+            echo "Frontend deployed on Bastion"
           fi
           
           # Configure Nginx reverse proxy on Bastion (one-time setup)
