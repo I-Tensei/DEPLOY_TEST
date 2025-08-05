@@ -18,6 +18,9 @@ function App() {
   const [filterStock, setFilterStock] = useState('all');
   const [editingItem, setEditingItem] = useState(null);
   const [editRemarks, setEditRemarks] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [deletePassword, setDeletePassword] = useState('');
 
   // 在庫一覧を取得
   useEffect(() => {
@@ -140,6 +143,49 @@ function App() {
   const cancelEditRemarks = () => {
     setEditingItem(null);
     setEditRemarks('');
+  };
+
+  // 削除確認ダイアログを開く
+  const openDeleteModal = (item) => {
+    setDeleteItem(item);
+    setShowDeleteModal(true);
+    setDeletePassword('');
+  };
+
+  // 削除確認ダイアログを閉じる
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setDeleteItem(null);
+    setDeletePassword('');
+  };
+
+  // 削除実行
+  const handleDelete = async () => {
+    // パスワード認証（簡易版）
+    const ADMIN_PASSWORD = 'admin123'; // 実際の運用では環境変数やサーバー側認証を使用
+    
+    if (deletePassword !== ADMIN_PASSWORD) {
+      alert('パスワードが間違っています。');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/items/${deleteItem.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!res.ok) {
+        throw new Error(`削除に失敗しました (${res.status})`);
+      }
+      
+      // 削除成功時、リストから削除
+      setItems(items.filter(item => item.id !== deleteItem.id));
+      closeDeleteModal();
+      alert(`${deleteItem.itemName} を削除しました。`);
+    } catch (error) {
+      console.error('削除エラー:', error);
+      alert('削除に失敗しました: ' + error.message);
+    }
   };
 
   // フィルタリングされた在庫リスト
@@ -329,6 +375,14 @@ function App() {
                           >
                             {item.inStock ? '📤 貸出' : '📥 返却'}
                           </button>
+                          <button
+                            onClick={() => openDeleteModal(item)}
+                            className="action-btn delete-btn"
+                            title="削除"
+                            style={{ marginLeft: '5px' }}
+                          >
+                            🗑️ 削除
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -489,6 +543,38 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* 削除確認モーダル */}
+      {showDeleteModal && (
+        <div className="modal-overlay" onClick={closeDeleteModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>削除確認</h3>
+            <p>以下の備品を削除しますか？</p>
+            <div className="delete-item-info">
+              <strong>{deleteItem?.itemName}</strong> ({deleteItem?.itemNumber})
+            </div>
+            <div className="form-group">
+              <label htmlFor="deletePassword">管理者パスワード *</label>
+              <input
+                id="deletePassword"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="パスワードを入力してください"
+                required
+              />
+            </div>
+            <div className="modal-buttons">
+              <button onClick={handleDelete} className="confirm-delete-btn">
+                削除する
+              </button>
+              <button onClick={closeDeleteModal} className="cancel-btn">
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
