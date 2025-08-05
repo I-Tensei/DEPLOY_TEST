@@ -148,6 +148,9 @@ jobs:
         host: ${{ secrets.PRIVATE_HOST }}
         username: ec2-user
         key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        proxy_host: ${{ secrets.BASTION_HOST }}
+        proxy_username: ec2-user
+        proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
         timeout: 180s
         command_timeout: 60s
         script: |
