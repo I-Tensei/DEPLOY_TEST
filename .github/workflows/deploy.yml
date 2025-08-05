@@ -63,6 +63,9 @@ jobs:
         source: "backend/demo/target/demo-0.0.1-SNAPSHOT.jar"
         target: "/tmp/"
         strip_components: 3
+        proxy_host: ${{ secrets.BASTION_HOST }}
+        proxy_username: ec2-user
+        proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
     # それぞれのEC2でアプリ起動・Nginx設定
     - name: Deploy on Bastion
