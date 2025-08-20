@@ -24,7 +24,7 @@ public class ItemController {
         return ResponseEntity.ok(items);
     }
     
-    // 全件取得 (従来版)
+    // 全件取得  (従来版)
     @GetMapping("/items")
     public ResponseEntity<List<Item>> getAllItems() {
         List<Item> items = itemService.getAllItems();
