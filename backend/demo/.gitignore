@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Ignore archived build outputs accidentally kept
+target_old_*/
+**/target_old_*/

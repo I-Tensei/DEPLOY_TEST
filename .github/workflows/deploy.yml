@@ -112,9 +112,7 @@ jobs:
               echo "Forwarding JAR to Private EC2 via LAN..."
               KEY_FILE="/home/ec2-user/.ssh/gha_key"
               umask 077
-              cat > "$KEY_FILE" <<'EOFKEY'
-              ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-              EOFKEY
+              printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY_FILE"
               scp -i "$KEY_FILE" -o StrictHostKeyChecking=no /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar
               rm -f "$KEY_FILE"
               echo "JAR forwarded to Private EC2"
