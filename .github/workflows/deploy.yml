@@ -8,166 +8,145 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 25
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'corretto'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'corretto'
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '20'
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
 
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
 
-    - name: Build backend
-      run: |
-        cd backend/demo
-        mvn clean package -DskipTests
+      - name: Build backend
+        run: |
+          cd backend/demo
+          mvn -T 2C -B clean package -DskipTests
 
-    - name: Build frontend
-      run: |
-        cd frontend
-        npm ci
-        npm run build
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
 
-    # Bastion EC2へのフロントエンドアップロード
-    - name: Upload frontend to Bastion
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.BASTION_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        source: "frontend/build"
-        target: "/tmp/frontend_new"
-        strip_components: 2
+      - name: Upload frontend to Bastion
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.BASTION_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          source: "frontend/build"
+          target: "/tmp/frontend_new"
+          strip_components: 2
 
-  # Bastion にはJARは配置しない（フロントのみ配置）
+      - name: Upload JAR to Bastion
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.BASTION_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          source: "backend/demo/target/demo-0.0.1-SNAPSHOT.jar"
+          target: "/tmp/"
+          strip_components: 3
 
-    # Private EC2へのデプロイ
-    - name: Upload JAR to Private
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.PRIVATE_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        source: "backend/demo/target/demo-0.0.1-SNAPSHOT.jar"
-        target: "/tmp/"
-        strip_components: 3
-        proxy_host: ${{ secrets.BASTION_HOST }}
-        proxy_username: ec2-user
-        proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+      - name: Deploy on Bastion (frontend + reverse proxy + forward JAR)
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.BASTION_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          timeout: 180s
+          command_timeout: 60s
+          script: |
+            echo "=== Starting deployment on Bastion ==="
 
-    # それぞれのEC2でアプリ起動・Nginx設定
-    - name: Deploy on Bastion (frontend + reverse proxy)
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.BASTION_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        timeout: 180s
-        command_timeout: 60s
-        script: |
-          echo "=== Starting deployment on Bastion ==="
+            if [ -d "/tmp/frontend_new" ]; then
+              echo "Deploying frontend to Bastion..."
+              sudo rm -rf /usr/share/nginx/html/* || true
+              sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
+              sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
+              rm -rf /tmp/frontend_new
+              echo "Frontend deployed on Bastion"
+            fi
 
-          # Deploy frontend to Bastion
-          if [ -d "/tmp/frontend_new" ]; then
-            echo "Deploying frontend to Bastion..."
-            sudo rm -rf /usr/share/nginx/html/* || true
-            sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
-            sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
-            rm -rf /tmp/frontend_new
-            echo "Frontend deployed on Bastion"
-          fi
-          
-          # Configure Nginx reverse proxy on Bastion
-          echo "Setting up Nginx reverse proxy on Bastion..."
-          sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null << 'NGINXEOF'
-          server {
-              listen 80;
-              server_name _;
-          
-              # フロントエンド（React）
-              location / {
-                  root /usr/share/nginx/html;
-                  index index.html index.htm;
-                  try_files $uri $uri/ /index.html;
-              }
-          
-              # API プロキシ（プライベートサーバーへ転送）
-              location /api {
-                  proxy_pass http://172.27.11.203:8080;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-                  
-                  # CORS設定
-                  add_header 'Access-Control-Allow-Origin' '*' always;
-                  add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-                  add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-                  
-                  # プリフライトリクエスト対応
-                  if ($request_method = 'OPTIONS') {
-                      add_header 'Access-Control-Allow-Origin' '*';
-                      add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS';
-                      add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
-                      add_header 'Access-Control-Max-Age' 1728000;
-                      add_header 'Content-Type' 'text/plain; charset=utf-8';
-                      add_header 'Content-Length' 0;
-                      return 204;
-                  }
-              }
-          }
-          NGINXEOF
-          
-          # Test and restart Nginx on Bastion
-          sudo nginx -t && sudo systemctl restart nginx || echo "Nginx restart failed on Bastion"
-          
-          echo "✓ Deployment on Bastion completed"
+            echo "Setting up Nginx reverse proxy on Bastion..."
+            sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null <<'NGINXEOF'
+            server {
+                listen 80;
+                server_name _;
+                location / {
+                    root /usr/share/nginx/html;
+                    index index.html index.htm;
+                    try_files $uri $uri/ /index.html;
+                }
+                location /api {
+                    proxy_pass http://172.27.11.203:8080;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+            }
+            NGINXEOF
 
-    - name: Deploy on Private (backend only)
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.PRIVATE_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        proxy_host: ${{ secrets.BASTION_HOST }}
-        proxy_username: ec2-user
-        proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        timeout: 180s
-        command_timeout: 60s
-        script: |
-          echo "=== Starting deployment on Private EC2 ==="
-          
-          # Stop existing Java process (local)
-          pkill java || true
-          sleep 3
+            sudo nginx -t && sudo systemctl restart nginx || echo "Nginx restart failed on Bastion"
 
-          # Place new JAR if uploaded
-          if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
-            echo "Deploying backend to Private EC2..."
-            mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
-          fi
+            if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
+              echo "Forwarding JAR to Private EC2 via LAN..."
+              KEY_FILE="/home/ec2-user/.ssh/gha_key"
+              umask 077
+              cat > "$KEY_FILE" <<'EOFKEY'
+              ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+              EOFKEY
+              scp -i "$KEY_FILE" -o StrictHostKeyChecking=no /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar
+              rm -f "$KEY_FILE"
+              echo "JAR forwarded to Private EC2"
+            fi
 
-          # Start application
-          cd /home/ec2-user
-          nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &
-          sleep 5
-          tail -n 100 app.log || true
+            echo "✓ Deployment on Bastion completed"
 
-          echo "✓ Deployment on Private EC2 completed"
+      - name: Deploy on Private (backend only)
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRIVATE_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          proxy_host: ${{ secrets.BASTION_HOST }}
+          proxy_username: ec2-user
+          proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          timeout: 180s
+          command_timeout: 60s
+          script: |
+            echo "=== Starting deployment on Private EC2 ==="
+            pkill java || true
+            sleep 3
+            if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
+              echo "Deploying backend to Private EC2..."
+              mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
+            fi
+            cd /home/ec2-user
+            nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &
+            sleep 5
+            tail -n 100 app.log || true
+            echo "✓ Deployment on Private EC2 completed"
 
-    - name: Notify Success
-      if: ${{ success() }}
-      run: echo "Deployment to AWS EC2 instances completed successfully."
+      - name: Notify Success
+        if: ${{ success() }}
+        run: echo "Deployment to AWS EC2 instances completed successfully."
