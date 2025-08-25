@@ -1,4 +1,3 @@
--- H2データベース用初期データ投入
 INSERT INTO items (item_number, item_name, model_number, in_stock, remarks, category_id, quantity, price, registered_at, updated_at) VALUES
 ('PC001', 'ノートパソコン', 'Lenovo ThinkPad E14 Gen3', 1, 'IT部門用', 1, 15, 89800, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('PR001', 'プリンター', 'Canon PIXUS TS3330', 1, '総務部用', 1, 8, 8500, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),

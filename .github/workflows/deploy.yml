@@ -3,8 +3,7 @@ name: Deploy to AWS EC2
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -53,16 +52,7 @@ jobs:
         target: "/tmp/frontend_new"
         strip_components: 2
 
-    # Bastion EC2へのデプロイ
-    - name: Upload JAR to Bastion
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ secrets.BASTION_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        source: "backend/demo/target/demo-0.0.1-SNAPSHOT.jar"
-        target: "/tmp/"
-        strip_components: 3
+  # Bastion にはJARは配置しない（フロントのみ配置）
 
     # Private EC2へのデプロイ
     - name: Upload JAR to Private
@@ -79,7 +69,7 @@ jobs:
         proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
     # それぞれのEC2でアプリ起動・Nginx設定
-    - name: Deploy on Bastion
+    - name: Deploy on Bastion (frontend + reverse proxy)
       uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.BASTION_HOST }}
@@ -89,35 +79,18 @@ jobs:
         command_timeout: 60s
         script: |
           echo "=== Starting deployment on Bastion ==="
-          
-          # Stop existing Java process on bastion (with timeout)
-          timeout 30 ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-            ec2-user@${{ secrets.BASTION_HOST }} 'pkill java || true' || echo "Java stop timeout - continuing"
-          
-          # Deploy backend JAR to bastion
-          if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
-            echo "Deploying backend to Bastion..."
-            timeout 60 scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-              /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@${{ secrets.BASTION_HOST }}:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
-            
-            # Start new application on bastion (with timeout)
-            timeout 30 ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-              ec2-user@${{ secrets.BASTION_HOST }} 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &' || echo "App start timeout - app may still be starting"
-            
-            echo "Backend deployed and started on Bastion"
-          fi
 
-          # Deploy frontend to Bastion (with timeout)
+          # Deploy frontend to Bastion
           if [ -d "/tmp/frontend_new" ]; then
             echo "Deploying frontend to Bastion..."
-            timeout 30 sudo rm -rf /usr/share/nginx/html/* || true
-            timeout 30 sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
-            timeout 30 sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
+            sudo rm -rf /usr/share/nginx/html/* || true
+            sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
+            sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
             rm -rf /tmp/frontend_new
             echo "Frontend deployed on Bastion"
           fi
           
-          # Configure Nginx reverse proxy on Bastion (one-time setup)
+          # Configure Nginx reverse proxy on Bastion
           echo "Setting up Nginx reverse proxy on Bastion..."
           sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null << 'NGINXEOF'
           server {
@@ -132,8 +105,8 @@ jobs:
               }
           
               # API プロキシ（プライベートサーバーへ転送）
-              location /api/ {
-                  proxy_pass http://10.0.2.123:8080/;
+              location /api {
+                  proxy_pass http://172.27.11.203:8080;
                   proxy_set_header Host $host;
                   proxy_set_header X-Real-IP $remote_addr;
                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -163,7 +136,7 @@ jobs:
           
           echo "✓ Deployment on Bastion completed"
 
-    - name: Deploy on Private
+    - name: Deploy on Private (backend only)
       uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.PRIVATE_HOST }}
@@ -177,77 +150,22 @@ jobs:
         script: |
           echo "=== Starting deployment on Private EC2 ==="
           
-          # Stop existing Java process on private server (with timeout)
-          timeout 30 ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-            ec2-user@${{ secrets.PRIVATE_HOST }} 'pkill java || true' || echo "Java stop timeout - continuing"
-          
-          # Deploy backend JAR to private server
+          # Stop existing Java process (local)
+          pkill java || true
+          sleep 3
+
+          # Place new JAR if uploaded
           if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
             echo "Deploying backend to Private EC2..."
-            timeout 60 scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-              /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@${{ secrets.PRIVATE_HOST }}:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
-            
-            # Start new application on private server (with timeout)
-            timeout 30 ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-              ec2-user@${{ secrets.PRIVATE_HOST }} 'cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &' || echo "App start timeout - app may still be starting"
-            
-            echo "Backend deployed and started on Private EC2"
+            mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
           fi
-          
-          # Deploy frontend to private server (with timeout)
-          if [ -d "/tmp/frontend_new" ]; then
-            echo "Deploying frontend to Private EC2..."
-            timeout 30 sudo rm -rf /usr/share/nginx/html/* || true
-            timeout 30 sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
-            timeout 30 sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
-            rm -rf /tmp/frontend_new
-            echo "Frontend deployed on Private EC2"
-          fi
-          
-          # Configure Nginx reverse proxy on Private EC2 (one-time setup)
-          echo "Setting up Nginx reverse proxy on Private EC2..."
-          sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null << 'NGINXEOF'
-          server {
-              listen 80;
-              server_name _;
-          
-              # フロントエンド（React）
-              location / {
-                  root /usr/share/nginx/html;
-                  index index.html index.htm;
-                  try_files $uri $uri/ /index.html;
-              }
-          
-              # API プロキシ（プライベートサーバーへ転送）
-              location /api/ {
-                  proxy_pass http://10.0.2.123:8080/;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-                  
-                  # CORS設定
-                  add_header 'Access-Control-Allow-Origin' '*' always;
-                  add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
-                  add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range' always;
-                  
-                  # プリフライトリクエスト対応
-                  if ($request_method = 'OPTIONS') {
-                      add_header 'Access-Control-Allow-Origin' '*';
-                      add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS';
-                      add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
-                      add_header 'Access-Control-Max-Age' 1728000;
-                      add_header 'Content-Type' 'text/plain; charset=utf-8';
-                      add_header 'Content-Length' 0;
-                      return 204;
-                  }
-              }
-          }
-          NGINXEOF
-          
-          # Test and restart Nginx on Private EC2
-          sudo nginx -t && sudo systemctl restart nginx || echo "Nginx restart failed on Private EC2"
-          
+
+          # Start application
+          cd /home/ec2-user
+          nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &
+          sleep 5
+          tail -n 100 app.log || true
+
           echo "✓ Deployment on Private EC2 completed"
 
     - name: Notify Success
