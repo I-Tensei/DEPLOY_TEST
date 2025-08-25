@@ -73,7 +73,7 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           timeout: 180s
-          command_timeout: 60s
+          command_timeout: 300s
           script: |
             echo "=== Starting deployment on Bastion ==="
 
@@ -112,8 +112,17 @@ jobs:
               echo "Forwarding JAR to Private EC2 via LAN..."
               KEY_FILE="/home/ec2-user/.ssh/gha_key"
               umask 077
+              rm -f "$KEY_FILE" 2>/dev/null || true
               printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY_FILE"
-              scp -i "$KEY_FILE" -o StrictHostKeyChecking=no /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar
+              chmod 600 "$KEY_FILE"
+              trap 'rm -f "$KEY_FILE"' EXIT
+              # quick reachability check
+              ssh -i "$KEY_FILE" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T ec2-user@172.27.11.203 "echo ok" || {
+                echo "ERROR: SSH to Private EC2 failed (port 22 unreachable or key rejected).";
+                exit 1;
+              }
+              scp -C -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+                /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar
               rm -f "$KEY_FILE"
               echo "JAR forwarded to Private EC2"
             fi
