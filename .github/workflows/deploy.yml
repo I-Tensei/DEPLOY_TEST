@@ -8,27 +8,26 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'corretto'
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: 'frontend/package-lock.json'
 
-      - name: Cache Maven dependencies
-        uses: actions/cache@v3
+      - name: Cache Maven
+        uses: actions/cache@v4
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -46,261 +45,74 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
-      - name: Pre-check SSH to Bastion (port 22)
+      - name: Pre-check Bastion:22
         run: |
-          echo "Checking TCP/22 to ${BASTION} ..."
           BASTION="${{ secrets.BASTION_HOST }}"
-          timeout 6 bash -c "</dev/tcp/${BASTION}/22" && echo "OK: 22 open" || { echo "NG: 22 unreachable"; exit 1; }
+          timeout 5 bash -c "</dev/tcp/${BASTION}/22" || { echo "Bastion:22 unreachable"; exit 1; }
 
-      - name: Upload frontend to Bastion (native scp)
+      - name: Upload artifacts to Bastion
         shell: bash
         env:
           BASTION: ${{ secrets.BASTION_HOST }}
         run: |
           set -e
-          KEY_FILE=$(mktemp)
-          printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          timeout 15 ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o IPQoS=none ec2-user@"$BASTION" 'rm -rf /tmp/frontend_new && mkdir -p /tmp/frontend_new' || true
+          KEY=$(mktemp)
+          printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY" && chmod 600 "$KEY"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -i "$KEY" ec2-user@"$BASTION" 'rm -rf /tmp/frontend_new && mkdir -p /tmp/frontend_new' || true
           shopt -s nullglob
           files=(frontend/build/*)
-          if [ ${#files[@]} -eq 0 ]; then echo "No frontend artifacts"; exit 1; fi
-          timeout 180 scp -r -C -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none "${files[@]}" ec2-user@"$BASTION":/tmp/frontend_new/
-          rm -f "$KEY_FILE"
+          [ ${#files[@]} -gt 0 ] || { echo "No frontend build"; exit 1; }
+          scp -r -C -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i "$KEY" "${files[@]}" ec2-user@"$BASTION":/tmp/frontend_new/
+          scp -C -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i "$KEY" backend/demo/target/demo-0.0.1-SNAPSHOT.jar ec2-user@"$BASTION":/tmp/
+          rm -f "$KEY"
 
-      - name: Upload JAR to Bastion (native scp)
-        shell: bash
-        env:
-          BASTION: ${{ secrets.BASTION_HOST }}
-        run: |
-          set -e
-          test -f backend/demo/target/demo-0.0.1-SNAPSHOT.jar
-          KEY_FILE=$(mktemp)
-          printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          timeout 120 scp -C -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none backend/demo/target/demo-0.0.1-SNAPSHOT.jar ec2-user@"$BASTION":/tmp/
-          rm -f "$KEY_FILE"
-
-      - name: Deploy on Bastion (frontend + reverse proxy + forward JAR)
+      - name: Deploy on Bastion (nginx + backend)
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.BASTION_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          timeout: 180s
-          command_timeout: 420s
-          script: |
-            echo "=== Starting deployment on Bastion ==="
-
-            # Ensure OS firewall does not block HTTP/HTTPS
-            if sudo systemctl is-active firewalld >/dev/null 2>&1; then
-              echo "firewalld is active. Opening http/https and reloading..."
-              sudo firewall-cmd --permanent --add-service=http || true
-              sudo firewall-cmd --permanent --add-service=https || true
-              sudo firewall-cmd --reload || true
-            fi
-
-            # Ensure nginx is installed and running
-            if ! command -v nginx >/dev/null 2>&1; then
-              echo "Installing nginx..."
-              sudo dnf -y install nginx || sudo yum -y install nginx || true
-            fi
-            sudo systemctl enable nginx || true
-            sudo systemctl start nginx || true
-            # Allow nginx proxy outbound on SELinux enforcing systems
-            if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then
-              sudo setsebool -P httpd_can_network_connect 1 || true
-            fi
-
-            if [ -d "/tmp/frontend_new" ]; then
-              echo "Deploying frontend to Bastion..."
-              sudo rm -rf /usr/share/nginx/html/* || true
-              sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ || true
-              sudo chown -R nginx:nginx /usr/share/nginx/html/ || true
-              rm -rf /tmp/frontend_new
-              echo "Frontend deployed on Bastion"
-            fi
-
-            echo "Setting up Nginx reverse proxy on Bastion..."
-            # Clean up existing conf.d to avoid duplicate default server errors
-            if [ -d "/etc/nginx/conf.d" ]; then
-              sudo rm -f /etc/nginx/conf.d/*.conf || true
-            fi
-            sudo bash -c 'printf "%s\n" \
-              "server {" \
-              "    listen 0.0.0.0:80;" \
-              "    listen [::]:80;" \
-              "    server_name _;" \
-              "    location / {" \
-              "        root /usr/share/nginx/html;" \
-              "        index index.html index.htm;" \
-              "        try_files \$uri \$uri/ /index.html;" \
-              "    }" \
-              "    location /api {" \
-              "        proxy_pass http://172.27.11.203:8080;" \
-              "        proxy_set_header Host \$host;" \
-              "        proxy_set_header X-Real-IP \$remote_addr;" \
-              "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;" \
-              "        proxy_set_header X-Forwarded-Proto \$scheme;" \
-              "    }" \
-              "}" > /etc/nginx/conf.d/api-proxy.conf'
-
-            sudo nginx -t && sudo systemctl restart nginx || echo "Nginx restart failed on Bastion"
-
-            FORWARD_OK=1
-            if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
-              echo "Forwarding JAR to Private EC2 via LAN..."
-              KEY_FILE="/home/ec2-user/.ssh/gha_key"
-              printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY_FILE"
-              chmod 600 "$KEY_FILE"
-              trap 'rm -f "$KEY_FILE"' EXIT
-              # choose key: prefer existing pem if present
-              KEY_TO_USE="$KEY_FILE"
-              if [ -f "/home/ec2-user/0715.pem" ]; then
-                chmod 600 /home/ec2-user/0715.pem || true
-                KEY_TO_USE="/home/ec2-user/0715.pem"
-              fi
-              # q　uick reachability check with selected key; fallback try with other key once
-              if ! ssh -i "$KEY_TO_USE" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ConnectionAttempts=1 -T ec2-user@172.27.11.203 "echo ok"; then
-                echo "WARN: SSH check with $KEY_TO_USE failed. Retrying with alternate key...";
-                ALT_KEY="$KEY_FILE"
-                if [ "$KEY_TO_USE" = "$KEY_FILE" ] && [ -f "/home/ec2-user/0715.pem" ]; then ALT_KEY="/home/ec2-user/0715.pem"; fi
-                if ! ssh -i "$ALT_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ConnectionAttempts=1 -T ec2-user@172.27.11.203 "echo ok"; then
-                  echo "WARN: SSH to Private EC2 failed (port 22 unreachable or key rejected). Falling back to run backend on Bastion."; FORWARD_OK=0;
-                else
-                  KEY_TO_USE="$ALT_KEY"
-                fi
-              fi
-              # Prepare Corretto 17 archive on Bastion (download if missing)
-              if [ ! -f "/tmp/corretto17.tar.gz" ]; then
-                echo "Downloading Corretto 17 JDK on Bastion..."
-                curl -fsSL --max-time 45 -o /tmp/corretto17.tar.gz https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz || {
-                  echo "WARN: Failed to download Corretto 17. Will rely on system Java if available.";
-                }
-              fi
-
-              if [ "$FORWARD_OK" = "1" ]; then
-                # Transfer artifacts to Private EC2
-                scp -C -i "$KEY_TO_USE" -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-                  /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar || FORWARD_OK=0
-                if [ -f "/tmp/corretto17.tar.gz" ]; then
-                  scp -C -i "$KEY_TO_USE" -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-                    /tmp/corretto17.tar.gz ec2-user@172.27.11.203:/tmp/corretto17.tar.gz || true
-                fi
-              fi
-              rm -f "$KEY_FILE"
-              if [ "$FORWARD_OK" = "1" ]; then echo "JAR forwarded to Private EC2"; fi
-            fi
-
-            # Fallback: run backend locally on Bastion if forwarding failed
-            if [ "${FORWARD_OK:-0}" != "1" ]; then
-                echo "=== FALLBACK: Starting backend on Bastion ==="
-                JAVA_BIN="java"
-                if ! command -v java >/dev/null 2>&1; then
-                  if [ -f "/tmp/corretto17.tar.gz" ]; then
-                    sudo mkdir -p /opt && sudo tar -xzf /tmp/corretto17.tar.gz -C /opt
-                    COR_DIR=$(ls -d /opt/amazon-corretto-17* 2>/dev/null | head -n1)
-                    if [ -n "$COR_DIR" ] && [ -x "$COR_DIR/bin/java" ]; then JAVA_BIN="$COR_DIR/bin/java"; fi
-                  else
-                    sudo dnf -y install java-17-openjdk-headless || sudo yum -y install java-17-openjdk-headless || true
-                  fi
-                fi
-                "$JAVA_BIN" -version || true
-                if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar; fi
-                cd /home/ec2-user
-                mkdir -p /home/ec2-user/data
-                DB_FLAGS="--spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
-                nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 $DB_FLAGS > app.log 2>&1 &
-                # Switch Nginx to local backend (avoid heredoc to prevent CRLF issues)
-                if [ -f "/etc/nginx/conf.d/api-proxy.conf" ]; then
-                  sudo sed -i 's#proxy_pass http://172.27.11.203:8080;#proxy_pass http://127.0.0.1:8080;#' /etc/nginx/conf.d/api-proxy.conf || true
-                fi
-                sudo nginx -t && sudo systemctl restart nginx || true
-                # health probe
-                for i in $(seq 1 30); do ss -lntp | grep -q ":8080" && break; sleep 2; done
-                curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 500 || true
-                echo
-                tail -n 100 app.log || true
-                echo "=== FALLBACK: Backend running on Bastion ==="
-            fi
-
-            echo "✓ Deployment on Bastion completed"
-            echo "--- Bastion nginx/port80 quick check ---"
-            sudo ss -lntp | (grep ":80" || true)
-            sudo systemctl is-active nginx || true
-            sudo systemctl status nginx --no-pager | sed -n '1,80p' || true
-            echo "curl localhost:80 ->"
-            curl -sS -m 5 -I http://127.0.0.1/ | head -n 3 || true
-            echo "curl localhost:80/api/items ->"
-            curl -sS -m 5 http://127.0.0.1/api/items | head -c 200 || true
-            echo "nginx last logs ->"
-            sudo journalctl -u nginx --no-pager -n 80 || true
-
-      - name: Deploy on Private (backend only)
-        continue-on-error: true
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.PRIVATE_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          proxy_host: ${{ secrets.BASTION_HOST }}
-          proxy_username: ec2-user
-          proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          timeout: 180s
+          timeout: 150s
           command_timeout: 300s
           script: |
-            echo "=== Starting deployment on Private EC2 ==="
-            pkill java || true
-            sleep 3
-            echo "Preparing Java runtime..."
-            JAVA_BIN="java"
-            if ! command -v java >/dev/null 2>&1; then
-              echo "System Java not found. Trying bundled Corretto..."
-              if [ -f "/tmp/corretto17.tar.gz" ]; then
-                sudo mkdir -p /opt && sudo tar -xzf /tmp/corretto17.tar.gz -C /opt
-                # find extracted directory name starting with amazon-corretto-17
-                CORRETTO_DIR=$(ls -d /opt/amazon-corretto-17* 2>/dev/null | head -n1)
-                if [ -n "$CORRETTO_DIR" ] && [ -x "$CORRETTO_DIR/bin/java" ]; then
-                  JAVA_BIN="$CORRETTO_DIR/bin/java"
-                  echo "Using bundled Corretto at $JAVA_BIN"
-                else
-                  echo "ERROR: Corretto archive extracted but java not found."; exit 1;
-                fi
-              else
-                echo "ERROR: Neither system Java nor bundled Corretto found."; exit 1;
-              fi
-            else
-              JAVA_BIN="$(command -v java)"
-            fi
-            "$JAVA_BIN" -version
-            if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
-              echo "Deploying backend to Private EC2..."
-              mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
-            fi
-            cd /home/ec2-user
-            echo "Starting Spring Boot JAR..."
-            # Run with file-based H2 (persistent) to avoid external DB dependency
+            set -e
+            command -v nginx >/dev/null 2>&1 || sudo dnf -y install nginx || sudo yum -y install nginx || true
+            sudo systemctl enable --now nginx || true
+            if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then sudo setsebool -P httpd_can_network_connect 1 || true; fi
+            if [ -d "/tmp/frontend_new" ]; then sudo rm -rf /usr/share/nginx/html/* && sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ && rm -rf /tmp/frontend_new; fi
+            sudo rm -f /etc/nginx/conf.d/*.conf || true
+            sudo bash -lc '{
+              echo "server {";
+              echo "  listen 0.0.0.0:80;";
+              echo "  listen [::]:80;";
+              echo "  server_name _;";
+              echo "  location / {";
+              echo "    root /usr/share/nginx/html;";
+              echo "    index index.html index.htm;";
+              echo "    try_files \$uri \$uri/ /index.html;";
+              echo "  }";
+              echo "  location /api {";
+              echo "    proxy_pass http://127.0.0.1:8080;";
+              echo "    proxy_set_header Host \$host;";
+              echo "    proxy_set_header X-Real-IP \$remote_addr;";
+              echo "    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;";
+              echo "    proxy_set_header X-Forwarded-Proto \$scheme;";
+              echo "  }";
+              echo "}";
+            } | sudo tee /etc/nginx/conf.d/app.conf >/dev/null'
+            sudo nginx -t && sudo systemctl restart nginx
+            command -v java >/dev/null 2>&1 || sudo dnf -y install java-17-openjdk-headless || sudo yum -y install java-17-openjdk-headless || true
+            [ -f /tmp/demo-0.0.1-SNAPSHOT.jar ] && mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
+            pkill -f 'demo-0.0.1-SNAPSHOT.jar' || true
             mkdir -p /home/ec2-user/data
-            DB_FLAGS="--spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
-            nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 $DB_FLAGS > app.log 2>&1 &
-            # wait up to ~60s for port 8080 to listen
-            for i in $(seq 1 30); do
-              if ss -lntp | grep -q ":8080"; then
-                break
-              fi
-              sleep 2
-            done
-            if ! ss -lntp | grep -q ":8080"; then
-              echo "ERROR: Port 8080 is not listening. Recent logs:"; tail -n 200 app.log || true; exit 1;
-            fi
-            echo "Backend is listening on 8080. Health probe:"
-            curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 500 || true
-            echo
-            echo "Recent logs:"; tail -n 100 app.log || true
-            echo "✓ Deployment on Private EC2 completed"
+            nohup java -jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 \
+              --spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL \
+              --spring.datasource.driverClassName=org.h2.Driver \
+              --spring.datasource.username=sa --spring.datasource.password= \
+              --spring.jpa.hibernate.ddl-auto=update \
+              --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect \
+              --spring.sql.init.mode=never >/home/ec2-user/app.log 2>&1 &
 
       - name: Notify Success
         if: ${{ success() }}
-        run: echo "Deployment to AWS EC2 instances completed successfully."
-        #sotuu test
-
+        run: echo "Deployment finished"
