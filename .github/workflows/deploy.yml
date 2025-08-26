@@ -142,7 +142,7 @@ jobs:
                 chmod 600 /home/ec2-user/0715.pem || true
                 KEY_TO_USE="/home/ec2-user/0715.pem"
               fi
-              # quick reachability check with selected key; fallback try with other key once
+              # q　uick reachability check with selected key; fallback try with other key once
               if ! ssh -i "$KEY_TO_USE" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=2 -T ec2-user@172.27.11.203 "echo ok"; then
                 echo "WARN: SSH check with $KEY_TO_USE failed. Retrying with alternate key...";
                 ALT_KEY="$KEY_FILE"
