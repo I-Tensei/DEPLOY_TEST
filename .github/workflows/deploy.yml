@@ -186,6 +186,14 @@ jobs:
             fi
 
             echo "✓ Deployment on Bastion completed"
+            echo "--- Bastion nginx/port80 quick check ---"
+            ss -lntp | (grep ":80" || true)
+            sudo systemctl is-active nginx || true
+            sudo systemctl status nginx --no-pager | sed -n '1,80p' || true
+            echo "curl localhost:80 ->"
+            curl -sS -m 5 -I http://127.0.0.1/ | head -n 3 || true
+            echo "curl localhost:80/api/items ->"
+            curl -sS -m 5 http://127.0.0.1/api/items | head -c 200 || true
 
       - name: Deploy on Private (backend only)
         continue-on-error: true
