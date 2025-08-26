@@ -88,7 +88,7 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           timeout: 180s
-          command_timeout: 300s
+          command_timeout: 420s
           script: |
             echo "=== Starting deployment on Bastion ==="
 
@@ -161,11 +161,11 @@ jobs:
                 KEY_TO_USE="/home/ec2-user/0715.pem"
               fi
               # q　uick reachability check with selected key; fallback try with other key once
-              if ! ssh -i "$KEY_TO_USE" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=2 -T ec2-user@172.27.11.203 "echo ok"; then
+              if ! ssh -i "$KEY_TO_USE" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ConnectionAttempts=1 -T ec2-user@172.27.11.203 "echo ok"; then
                 echo "WARN: SSH check with $KEY_TO_USE failed. Retrying with alternate key...";
                 ALT_KEY="$KEY_FILE"
                 if [ "$KEY_TO_USE" = "$KEY_FILE" ] && [ -f "/home/ec2-user/0715.pem" ]; then ALT_KEY="/home/ec2-user/0715.pem"; fi
-                if ! ssh -i "$ALT_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=2 -T ec2-user@172.27.11.203 "echo ok"; then
+                if ! ssh -i "$ALT_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 -o ConnectionAttempts=1 -T ec2-user@172.27.11.203 "echo ok"; then
                   echo "WARN: SSH to Private EC2 failed (port 22 unreachable or key rejected). Falling back to run backend on Bastion."; FORWARD_OK=0;
                 else
                   KEY_TO_USE="$ALT_KEY"
