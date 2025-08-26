@@ -92,9 +92,6 @@ jobs:
                 listen 80;
                 server_name _;
                 location / {
-              fi
-
-              FORWARD_OK=1
                     root /usr/share/nginx/html;
                     index index.html index.htm;
                     try_files $uri $uri/ /index.html;
@@ -110,12 +107,11 @@ jobs:
             NGINXEOF
 
             sudo nginx -t && sudo systemctl restart nginx || echo "Nginx restart failed on Bastion"
-                if ! ssh -i "$KEY_TO_USE" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=2 -T ec2-user@172.27.11.203 "echo ok"; then
+
+            FORWARD_OK=1
             if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
               echo "Forwarding JAR to Private EC2 via LAN..."
               KEY_FILE="/home/ec2-user/.ssh/gha_key"
-                  if ! ssh -i "$ALT_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=2 -T ec2-user@172.27.11.203 "echo ok"; then
-                    echo "WARN: SSH to Private EC2 failed (port 22 unreachable or key rejected). Falling back to run backend on Bastion."; FORWARD_OK=0;
               printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY_FILE"
               chmod 600 "$KEY_FILE"
               trap 'rm -f "$KEY_FILE"' EXIT
@@ -131,7 +127,7 @@ jobs:
                 ALT_KEY="$KEY_FILE"
                 if [ "$KEY_TO_USE" = "$KEY_FILE" ] && [ -f "/home/ec2-user/0715.pem" ]; then ALT_KEY="/home/ec2-user/0715.pem"; fi
                 if ! ssh -i "$ALT_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ConnectionAttempts=2 -T ec2-user@172.27.11.203 "echo ok"; then
-                  echo "ERROR: SSH to Private EC2 failed (port 22 unreachable or key rejected)."; exit 1;
+                  echo "WARN: SSH to Private EC2 failed (port 22 unreachable or key rejected). Falling back to run backend on Bastion."; FORWARD_OK=0;
                 else
                   KEY_TO_USE="$ALT_KEY"
                 fi
@@ -139,13 +135,26 @@ jobs:
               # Prepare Corretto 17 archive on Bastion (download if missing)
               if [ ! -f "/tmp/corretto17.tar.gz" ]; then
                 echo "Downloading Corretto 17 JDK on Bastion..."
-                if [ "$FORWARD_OK" = "1" ]; then echo "JAR forwarded to Private EC2"; fi
+                curl -fsSL -o /tmp/corretto17.tar.gz https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz || {
                   echo "WARN: Failed to download Corretto 17. Will rely on system Java if available.";
                 }
               fi
 
-              # Fallback: run backend locally on Bastion if forwarding failed
-              if [ "${FORWARD_OK:-0}" != "1" ]; then
+              if [ "$FORWARD_OK" = "1" ]; then
+                # Transfer artifacts to Private EC2
+                scp -C -i "$KEY_TO_USE" -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+                  /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar || FORWARD_OK=0
+                if [ -f "/tmp/corretto17.tar.gz" ]; then
+                  scp -C -i "$KEY_TO_USE" -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+                    /tmp/corretto17.tar.gz ec2-user@172.27.11.203:/tmp/corretto17.tar.gz || true
+                fi
+              fi
+              rm -f "$KEY_FILE"
+              if [ "$FORWARD_OK" = "1" ]; then echo "JAR forwarded to Private EC2"; fi
+            fi
+
+            # Fallback: run backend locally on Bastion if forwarding failed
+            if [ "${FORWARD_OK:-0}" != "1" ]; then
                 echo "=== FALLBACK: Starting backend on Bastion ==="
                 JAVA_BIN="java"
                 if ! command -v java >/dev/null 2>&1; then
@@ -164,24 +173,24 @@ jobs:
                 DB_FLAGS="--spring.datasource.url='jdbc:h2:file:/home/ec2-user/data/demo_db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL' --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
                 nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 $DB_FLAGS > app.log 2>&1 &
                 # Switch Nginx to local backend
-                sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null <<'NGINXEOF'
-                server {
-                    listen 80;
-                    server_name _;
-                    location / {
-                        root /usr/share/nginx/html;
-                        index index.html index.htm;
-                        try_files $uri $uri/ /index.html;
-                    }
-                    location /api {
-                        proxy_pass http://127.0.0.1:8080;
-                        proxy_set_header Host $host;
-                        proxy_set_header X-Real-IP $remote_addr;
-                        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                        proxy_set_header X-Forwarded-Proto $scheme;
-                    }
-                }
-                NGINXEOF
+              sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null <<'NGINXEOF'
+              server {
+                  listen 80;
+                  server_name _;
+                  location / {
+                      root /usr/share/nginx/html;
+                      index index.html index.htm;
+                      try_files $uri $uri/ /index.html;
+                  }
+                  location /api {
+                      proxy_pass http://127.0.0.1:8080;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+              }
+              NGINXEOF
                 sudo nginx -t && sudo systemctl restart nginx || true
                 # health probe
                 for i in $(seq 1 30); do ss -lntp | grep -q ":8080" && break; sleep 2; done
@@ -189,17 +198,6 @@ jobs:
                 echo
                 tail -n 100 app.log || true
                 echo "=== FALLBACK: Backend running on Bastion ==="
-              fi
-
-              # Transfer artifacts to Private EC2
-              scp -C -i "$KEY_TO_USE" -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-                /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar
-              if [ -f "/tmp/corretto17.tar.gz" ]; then
-                scp -C -i "$KEY_TO_USE" -o StrictHostKeyChecking=no -o ConnectTimeout=60 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-                  /tmp/corretto17.tar.gz ec2-user@172.27.11.203:/tmp/corretto17.tar.gz || true
-              fi
-              rm -f "$KEY_FILE"
-              echo "JAR forwarded to Private EC2"
             fi
 
             echo "✓ Deployment on Bastion completed"
