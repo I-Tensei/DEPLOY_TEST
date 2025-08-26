@@ -122,10 +122,14 @@ jobs:
             fi
 
             echo "Setting up Nginx reverse proxy on Bastion..."
+            # Clean up existing conf.d to avoid duplicate default server errors
+            if [ -d "/etc/nginx/conf.d" ]; then
+              sudo rm -f /etc/nginx/conf.d/*.conf || true
+            fi
             sudo bash -c 'printf "%s\n" \
               "server {" \
-              "    listen 0.0.0.0:80 default_server;" \
-              "    listen [::]:80 default_server;" \
+              "    listen 0.0.0.0:80;" \
+              "    listen [::]:80;" \
               "    server_name _;" \
               "    location / {" \
               "        root /usr/share/nginx/html;" \
@@ -170,7 +174,7 @@ jobs:
               # Prepare Corretto 17 archive on Bastion (download if missing)
               if [ ! -f "/tmp/corretto17.tar.gz" ]; then
                 echo "Downloading Corretto 17 JDK on Bastion..."
-                curl -fsSL -o /tmp/corretto17.tar.gz https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz || {
+                curl -fsSL --max-time 45 -o /tmp/corretto17.tar.gz https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz || {
                   echo "WARN: Failed to download Corretto 17. Will rely on system Java if available.";
                 }
               fi
