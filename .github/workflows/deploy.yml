@@ -139,23 +139,45 @@ jobs:
           proxy_username: ec2-user
           proxy_key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           timeout: 180s
-          command_timeout: 60s
+          command_timeout: 300s
           script: |
             echo "=== Starting deployment on Private EC2 ==="
             pkill java || true
             sleep 3
+            echo "Ensuring Java 17 runtime is installed..."
+            if ! command -v java >/dev/null 2>&1; then
+              if command -v dnf >/dev/null 2>&1; then
+                sudo dnf install -y java-17-openjdk-headless
+              else
+                sudo yum install -y java-17-openjdk-headless
+              fi
+            fi
+            java -version || true
             if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
               echo "Deploying backend to Private EC2..."
               mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
             fi
             cd /home/ec2-user
+            echo "Starting Spring Boot JAR..."
             nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &
-            sleep 5
-            tail -n 100 app.log || true
+            # wait up to ~30s for port 8080 to listen
+            for i in $(seq 1 15); do
+              if ss -lntp | grep -q ":8080"; then
+                break
+              fi
+              sleep 2
+            done
+            if ! ss -lntp | grep -q ":8080"; then
+              echo "ERROR: Port 8080 is not listening. Recent logs:"; tail -n 200 app.log || true; exit 1;
+            fi
+            echo "Backend is listening on 8080. Health probe:"
+            curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 500 || true
+            echo
+            echo "Recent logs:"; tail -n 100 app.log || true
             echo "✓ Deployment on Private EC2 completed"
 
       - name: Notify Success
         if: ${{ success() }}
         run: echo "Deployment to AWS EC2 instances completed successfully."
         #sotuu test
-        
+
