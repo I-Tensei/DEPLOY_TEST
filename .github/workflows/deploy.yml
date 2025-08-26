@@ -157,3 +157,5 @@ jobs:
       - name: Notify Success
         if: ${{ success() }}
         run: echo "Deployment to AWS EC2 instances completed successfully."
+        #sotuu test
+        
