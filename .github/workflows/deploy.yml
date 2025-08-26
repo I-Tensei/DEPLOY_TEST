@@ -172,25 +172,10 @@ jobs:
                 mkdir -p /home/ec2-user/data
                 DB_FLAGS="--spring.datasource.url='jdbc:h2:file:/home/ec2-user/data/demo_db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL' --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
                 nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 $DB_FLAGS > app.log 2>&1 &
-                # Switch Nginx to local backend
-              sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null <<'NGINXEOF'
-              server {
-                  listen 80;
-                  server_name _;
-                  location / {
-                      root /usr/share/nginx/html;
-                      index index.html index.htm;
-                      try_files $uri $uri/ /index.html;
-                  }
-                  location /api {
-                      proxy_pass http://127.0.0.1:8080;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP $remote_addr;
-                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Proto $scheme;
-                  }
-              }
-              NGINXEOF
+                # Switch Nginx to local backend (avoid heredoc to prevent CRLF issues)
+                if [ -f "/etc/nginx/conf.d/api-proxy.conf" ]; then
+                  sudo sed -i 's#proxy_pass http://172.27.11.203:8080;#proxy_pass http://127.0.0.1:8080;#' /etc/nginx/conf.d/api-proxy.conf || true
+                fi
                 sudo nginx -t && sudo systemctl restart nginx || true
                 # health probe
                 for i in $(seq 1 30); do ss -lntp | grep -q ":8080" && break; sleep 2; done
