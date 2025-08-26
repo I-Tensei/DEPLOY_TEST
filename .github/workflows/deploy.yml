@@ -77,6 +77,26 @@ jobs:
           script: |
             echo "=== Starting deployment on Bastion ==="
 
+            # Ensure OS firewall does not block HTTP/HTTPS
+            if sudo systemctl is-active firewalld >/dev/null 2>&1; then
+              echo "firewalld is active. Opening http/https and reloading..."
+              sudo firewall-cmd --permanent --add-service=http || true
+              sudo firewall-cmd --permanent --add-service=https || true
+              sudo firewall-cmd --reload || true
+            fi
+
+            # Ensure nginx is installed and running
+            if ! command -v nginx >/dev/null 2>&1; then
+              echo "Installing nginx..."
+              sudo dnf -y install nginx || sudo yum -y install nginx || true
+            fi
+            sudo systemctl enable nginx || true
+            sudo systemctl start nginx || true
+            # Allow nginx proxy outbound on SELinux enforcing systems
+            if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then
+              sudo setsebool -P httpd_can_network_connect 1 || true
+            fi
+
             if [ -d "/tmp/frontend_new" ]; then
               echo "Deploying frontend to Bastion..."
               sudo rm -rf /usr/share/nginx/html/* || true
@@ -88,23 +108,24 @@ jobs:
 
             echo "Setting up Nginx reverse proxy on Bastion..."
             sudo tee /etc/nginx/conf.d/api-proxy.conf > /dev/null <<'NGINXEOF'
-            server {
-                listen 80;
-                server_name _;
-                location / {
-                    root /usr/share/nginx/html;
-                    index index.html index.htm;
-                    try_files $uri $uri/ /index.html;
-                }
-                location /api {
-                    proxy_pass http://172.27.11.203:8080;
-                    proxy_set_header Host $host;
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                }
-            }
-            NGINXEOF
+      server {
+        listen 0.0.0.0:80 default_server;
+        listen [::]:80 default_server;
+        server_name _;
+        location / {
+          root /usr/share/nginx/html;
+          index index.html index.htm;
+          try_files $uri $uri/ /index.html;
+        }
+        location /api {
+          proxy_pass http://172.27.11.203:8080;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+      NGINXEOF
 
             sudo nginx -t && sudo systemctl restart nginx || echo "Nginx restart failed on Bastion"
 
@@ -187,13 +208,15 @@ jobs:
 
             echo "✓ Deployment on Bastion completed"
             echo "--- Bastion nginx/port80 quick check ---"
-            ss -lntp | (grep ":80" || true)
+            sudo ss -lntp | (grep ":80" || true)
             sudo systemctl is-active nginx || true
             sudo systemctl status nginx --no-pager | sed -n '1,80p' || true
             echo "curl localhost:80 ->"
             curl -sS -m 5 -I http://127.0.0.1/ | head -n 3 || true
             echo "curl localhost:80/api/items ->"
             curl -sS -m 5 http://127.0.0.1/api/items | head -c 200 || true
+            echo "nginx last logs ->"
+            sudo journalctl -u nginx --no-pager -n 80 || true
 
       - name: Deploy on Private (backend only)
         continue-on-error: true
