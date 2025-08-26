@@ -50,6 +50,25 @@ jobs:
           BASTION="${{ secrets.BASTION_HOST }}"
           timeout 5 bash -c "</dev/tcp/${BASTION}/22" || { echo "Bastion:22 unreachable"; exit 1; }
 
+      - name: SSH handshake warm-up
+        shell: bash
+        env:
+          BASTION: ${{ secrets.BASTION_HOST }}
+        run: |
+          KEY=$(mktemp)
+          printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY" && chmod 600 "$KEY"
+          # Try quick handshake twice to avoid transient banner issues
+          for i in 1 2; do
+            if ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o ConnectionAttempts=1 -o IPQoS=none -i "$KEY" ec2-user@"$BASTION" 'echo ok' ; then
+              echo "Handshake OK"
+              break
+            fi
+            echo "Handshake try $i failed; retrying..."; sleep 2
+          done
+          rm -f "$KEY"
+          # If still not reachable, fail
+          [ "$i" != "2" ] || { echo "SSH handshake failed before upload"; exit 1; }
+
       - name: Upload artifacts to Bastion
         shell: bash
         env:
@@ -61,11 +80,24 @@ jobs:
           # Pack frontend as a single tarball to avoid scp -r overhead
           [ -d frontend/build ] || { echo "No frontend build dir"; exit 1; }
           tar -C frontend/build -czf frontend_build.tgz .
-          # Upload with explicit timeouts and keepalives to prevent hangs
-          timeout 200 scp -C -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -i "$KEY" \
-            frontend_build.tgz ec2-user@"$BASTION":/tmp/frontend_build.tgz
-          timeout 200 scp -C -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -i "$KEY" \
-            backend/demo/target/demo-0.0.1-SNAPSHOT.jar ec2-user@"$BASTION":/tmp/
+          upload() {
+            src="$1"; dst="$2";
+            timeout 240 scp -C \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o PreferredAuthentications=publickey -o IdentitiesOnly=yes \
+              -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none \
+              -i "$KEY" "$src" ec2-user@"$BASTION":"$dst";
+          }
+          for f in 1 2 3; do
+            if upload frontend_build.tgz /tmp/frontend_build.tgz; then ok1=1; break; fi
+            echo "Retry scp frontend ($f/3)"; sleep 3;
+          done
+          [ "${ok1:-0}" = "1" ] || { echo "Upload frontend failed"; exit 1; }
+          for f in 1 2 3; do
+            if upload backend/demo/target/demo-0.0.1-SNAPSHOT.jar /tmp/demo-0.0.1-SNAPSHOT.jar; then ok2=1; break; fi
+            echo "Retry scp jar ($f/3)"; sleep 3;
+          done
+          [ "${ok2:-0}" = "1" ] || { echo "Upload jar failed"; exit 1; }
           rm -f frontend_build.tgz
           rm -f "$KEY"
 
