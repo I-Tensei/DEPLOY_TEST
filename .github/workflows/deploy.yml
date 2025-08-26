@@ -57,17 +57,14 @@ jobs:
         run: |
           KEY=$(mktemp)
           printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY" && chmod 600 "$KEY"
-          # Try quick handshake twice to avoid transient banner issues
-          for i in 1 2; do
+          # Quick handshake retries; non-fatal (banner exchange can be flaky)
+          for i in 1 2 3 4 5; do
             if ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o ConnectionAttempts=1 -o IPQoS=none -i "$KEY" ec2-user@"$BASTION" 'echo ok' ; then
-              echo "Handshake OK"
-              break
-            fi
-            echo "Handshake try $i failed; retrying..."; sleep 2
-          done
+              echo "Handshake OK"; break; fi
+            echo "Handshake try $i failed; retrying..."; sleep 3
+          done || true
           rm -f "$KEY"
-          # If still not reachable, fail
-          [ "$i" != "2" ] || { echo "SSH handshake failed before upload"; exit 1; }
+          # Do not fail here; upload step has its own retries
 
       - name: Upload artifacts to Bastion
         shell: bash
@@ -88,14 +85,16 @@ jobs:
               -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none \
               -i "$KEY" "$src" ec2-user@"$BASTION":"$dst";
           }
-          for f in 1 2 3; do
+          for f in 1 2 3 4 5; do
             if upload frontend_build.tgz /tmp/frontend_build.tgz; then ok1=1; break; fi
-            echo "Retry scp frontend ($f/3)"; sleep 3;
+            d=$(( 2**(f-1) )); if [ $d -gt 10 ]; then d=10; fi
+            echo "Retry scp frontend ($f/5) after ${d}s..."; sleep "$d";
           done
           [ "${ok1:-0}" = "1" ] || { echo "Upload frontend failed"; exit 1; }
-          for f in 1 2 3; do
+          for f in 1 2 3 4 5; do
             if upload backend/demo/target/demo-0.0.1-SNAPSHOT.jar /tmp/demo-0.0.1-SNAPSHOT.jar; then ok2=1; break; fi
-            echo "Retry scp jar ($f/3)"; sleep 3;
+            d=$(( 2**(f-1) )); if [ $d -gt 10 ]; then d=10; fi
+            echo "Retry scp jar ($f/5) after ${d}s..."; sleep "$d";
           done
           [ "${ok2:-0}" = "1" ] || { echo "Upload jar failed"; exit 1; }
           rm -f frontend_build.tgz
