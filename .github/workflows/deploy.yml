@@ -209,7 +209,7 @@ jobs:
                 if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar; fi
                 cd /home/ec2-user
                 mkdir -p /home/ec2-user/data
-                DB_FLAGS="--spring.datasource.url='jdbc:h2:file:/home/ec2-user/data/demo_db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL' --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
+                DB_FLAGS="--spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
                 nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 $DB_FLAGS > app.log 2>&1 &
                 # Switch Nginx to local backend (avoid heredoc to prevent CRLF issues)
                 if [ -f "/etc/nginx/conf.d/api-proxy.conf" ]; then
@@ -281,7 +281,7 @@ jobs:
             echo "Starting Spring Boot JAR..."
             # Run with file-based H2 (persistent) to avoid external DB dependency
             mkdir -p /home/ec2-user/data
-            DB_FLAGS="--spring.datasource.url='jdbc:h2:file:/home/ec2-user/data/demo_db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL' --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
+            DB_FLAGS="--spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL --spring.datasource.driverClassName=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --spring.jpa.hibernate.ddl-auto=update --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect --spring.sql.init.mode=never"
             nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 $DB_FLAGS > app.log 2>&1 &
             # wait up to ~60s for port 8080 to listen
             for i in $(seq 1 30); do
