@@ -58,12 +58,15 @@ jobs:
           set -e
           KEY=$(mktemp)
           printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > "$KEY" && chmod 600 "$KEY"
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -i "$KEY" ec2-user@"$BASTION" 'rm -rf /tmp/frontend_new && mkdir -p /tmp/frontend_new' || true
-          shopt -s nullglob
-          files=(frontend/build/*)
-          [ ${#files[@]} -gt 0 ] || { echo "No frontend build"; exit 1; }
-          scp -r -C -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i "$KEY" "${files[@]}" ec2-user@"$BASTION":/tmp/frontend_new/
-          scp -C -o StrictHostKeyChecking=no -o ConnectTimeout=15 -i "$KEY" backend/demo/target/demo-0.0.1-SNAPSHOT.jar ec2-user@"$BASTION":/tmp/
+          # Pack frontend as a single tarball to avoid scp -r overhead
+          [ -d frontend/build ] || { echo "No frontend build dir"; exit 1; }
+          tar -C frontend/build -czf frontend_build.tgz .
+          # Upload with explicit timeouts and keepalives to prevent hangs
+          timeout 200 scp -C -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -i "$KEY" \
+            frontend_build.tgz ec2-user@"$BASTION":/tmp/frontend_build.tgz
+          timeout 200 scp -C -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -i "$KEY" \
+            backend/demo/target/demo-0.0.1-SNAPSHOT.jar ec2-user@"$BASTION":/tmp/
+          rm -f frontend_build.tgz
           rm -f "$KEY"
 
       - name: Deploy on Bastion (nginx + backend)
@@ -79,7 +82,12 @@ jobs:
             command -v nginx >/dev/null 2>&1 || sudo dnf -y install nginx || sudo yum -y install nginx || true
             sudo systemctl enable --now nginx || true
             if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then sudo setsebool -P httpd_can_network_connect 1 || true; fi
-            if [ -d "/tmp/frontend_new" ]; then sudo rm -rf /usr/share/nginx/html/* && sudo cp -r /tmp/frontend_new/* /usr/share/nginx/html/ && rm -rf /tmp/frontend_new; fi
+            if [ -f "/tmp/frontend_build.tgz" ]; then
+              sudo rm -rf /usr/share/nginx/html/*
+              sudo mkdir -p /usr/share/nginx/html
+              sudo tar -xzf /tmp/frontend_build.tgz -C /usr/share/nginx/html
+              rm -f /tmp/frontend_build.tgz
+            fi
             sudo rm -f /etc/nginx/conf.d/*.conf || true
             sudo bash -lc '{
               echo "server {";
