@@ -46,12 +46,21 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      - name: Pre-check SSH to Bastion (port 22)
+        run: |
+          echo "Checking TCP/22 to ${BASTION} ..."
+          BASTION="${{ secrets.BASTION_HOST }}"
+          timeout 6 bash -c "</dev/tcp/${BASTION}/22" && echo "OK: 22 open" || { echo "NG: 22 unreachable"; exit 1; }
+
       - name: Upload frontend to Bastion
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.BASTION_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          timeout: 120s
+          command_timeout: 120s
+          debug: true
           source: "frontend/build"
           target: "/tmp/frontend_new"
           strip_components: 2
@@ -62,6 +71,9 @@ jobs:
           host: ${{ secrets.BASTION_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          timeout: 120s
+          command_timeout: 120s
+          debug: true
           source: "backend/demo/target/demo-0.0.1-SNAPSHOT.jar"
           target: "/tmp/"
           strip_components: 3
