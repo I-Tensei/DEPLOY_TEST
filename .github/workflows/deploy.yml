@@ -121,8 +121,21 @@ jobs:
                 echo "ERROR: SSH to Private EC2 failed (port 22 unreachable or key rejected).";
                 exit 1;
               }
+              # Prepare Corretto 17 archive on Bastion (download if missing)
+              if [ ! -f "/tmp/corretto17.tar.gz" ]; then
+                echo "Downloading Corretto 17 JDK on Bastion..."
+                curl -fsSL -o /tmp/corretto17.tar.gz https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz || {
+                  echo "WARN: Failed to download Corretto 17. Will rely on system Java if available.";
+                }
+              fi
+
+              # Transfer artifacts to Private EC2
               scp -C -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
                 /tmp/demo-0.0.1-SNAPSHOT.jar ec2-user@172.27.11.203:/tmp/demo-0.0.1-SNAPSHOT.jar
+              if [ -f "/tmp/corretto17.tar.gz" ]; then
+                scp -C -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+                  /tmp/corretto17.tar.gz ec2-user@172.27.11.203:/tmp/corretto17.tar.gz || true
+              fi
               rm -f "$KEY_FILE"
               echo "JAR forwarded to Private EC2"
             fi
@@ -144,37 +157,34 @@ jobs:
             echo "=== Starting deployment on Private EC2 ==="
             pkill java || true
             sleep 3
-            echo "Ensuring Java 17 runtime is installed..."
+            echo "Preparing Java runtime..."
+            JAVA_BIN="java"
             if ! command -v java >/dev/null 2>&1; then
-              if command -v dnf >/dev/null 2>&1; then
-                echo "Using dnf to install JRE..."
-                sudo dnf -y install java-17-amazon-corretto-headless \
-                  || sudo dnf -y install java-17-openjdk-headless \
-                  || sudo dnf -y install java-17-openjdk || true
-              elif command -v yum >/dev/null 2>&1; then
-                echo "Using yum to install JRE..."
-                if command -v amazon-linux-extras >/dev/null 2>&1; then
-                  sudo amazon-linux-extras enable corretto17 || true
-                  sudo yum clean metadata || true
+              echo "System Java not found. Trying bundled Corretto..."
+              if [ -f "/tmp/corretto17.tar.gz" ]; then
+                sudo mkdir -p /opt && sudo tar -xzf /tmp/corretto17.tar.gz -C /opt
+                # find extracted directory name starting with amazon-corretto-17
+                CORRETTO_DIR=$(ls -d /opt/amazon-corretto-17* 2>/dev/null | head -n1)
+                if [ -n "$CORRETTO_DIR" ] && [ -x "$CORRETTO_DIR/bin/java" ]; then
+                  JAVA_BIN="$CORRETTO_DIR/bin/java"
+                  echo "Using bundled Corretto at $JAVA_BIN"
+                else
+                  echo "ERROR: Corretto archive extracted but java not found."; exit 1;
                 fi
-                sudo yum -y install java-17-amazon-corretto-headless \
-                  || sudo yum -y install java-17-openjdk-headless \
-                  || sudo yum -y install java-17-openjdk || true
               else
-                echo "ERROR: No supported package manager found (dnf/yum)."; exit 1;
+                echo "ERROR: Neither system Java nor bundled Corretto found."; exit 1;
               fi
+            else
+              JAVA_BIN="$(command -v java)"
             fi
-            if ! command -v java >/dev/null 2>&1; then
-              echo "ERROR: Java 17 installation failed. Please install manually (e.g., Corretto 17)."; exit 1;
-            fi
-            java -version
+            "$JAVA_BIN" -version
             if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
               echo "Deploying backend to Private EC2..."
               mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
             fi
             cd /home/ec2-user
             echo "Starting Spring Boot JAR..."
-            nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &
+            nohup "$JAVA_BIN" -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 > app.log 2>&1 &
             # wait up to ~30s for port 8080 to listen
             for i in $(seq 1 15); do
               if ss -lntp | grep -q ":8080"; then
