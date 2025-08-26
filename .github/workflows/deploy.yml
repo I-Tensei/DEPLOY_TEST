@@ -147,12 +147,27 @@ jobs:
             echo "Ensuring Java 17 runtime is installed..."
             if ! command -v java >/dev/null 2>&1; then
               if command -v dnf >/dev/null 2>&1; then
-                sudo dnf install -y java-17-openjdk-headless
+                echo "Using dnf to install JRE..."
+                sudo dnf -y install java-17-amazon-corretto-headless \
+                  || sudo dnf -y install java-17-openjdk-headless \
+                  || sudo dnf -y install java-17-openjdk || true
+              elif command -v yum >/dev/null 2>&1; then
+                echo "Using yum to install JRE..."
+                if command -v amazon-linux-extras >/dev/null 2>&1; then
+                  sudo amazon-linux-extras enable corretto17 || true
+                  sudo yum clean metadata || true
+                fi
+                sudo yum -y install java-17-amazon-corretto-headless \
+                  || sudo yum -y install java-17-openjdk-headless \
+                  || sudo yum -y install java-17-openjdk || true
               else
-                sudo yum install -y java-17-openjdk-headless
+                echo "ERROR: No supported package manager found (dnf/yum)."; exit 1;
               fi
             fi
-            java -version || true
+            if ! command -v java >/dev/null 2>&1; then
+              echo "ERROR: Java 17 installation failed. Please install manually (e.g., Corretto 17)."; exit 1;
+            fi
+            java -version
             if [ -f "/tmp/demo-0.0.1-SNAPSHOT.jar" ]; then
               echo "Deploying backend to Private EC2..."
               mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
