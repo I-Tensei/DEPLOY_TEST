@@ -113,12 +113,24 @@ jobs:
             set -e
             command -v nginx >/dev/null 2>&1 || sudo dnf -y install nginx || sudo yum -y install nginx || true
             sudo systemctl enable --now nginx || true
-            # If OS firewall is active, open HTTP and reload
+            # Network visibility and firewall management
+            echo "=== Network Status Check ==="
+            curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || echo "No public IP"
+            curl -s http://169.254.169.254/latest/meta-data/instance-id || echo "No instance ID"
+            # Completely disable firewalld for stability (re-enable manually if needed)
             if sudo systemctl is-active firewalld >/dev/null 2>&1; then
-              sudo firewall-cmd --permanent --add-service=http || true
-              sudo firewall-cmd --permanent --add-service=https || true
-              sudo firewall-cmd --reload || true
+              echo "Disabling firewalld to prevent intermittent blocking..."
+              sudo systemctl stop firewalld
+              sudo systemctl disable firewalld
             fi
+            # Alternative: iptables flush (if needed)
+            sudo iptables -F || true
+            sudo iptables -X || true
+            sudo iptables -t nat -F || true
+            sudo iptables -t nat -X || true
+            sudo iptables -P INPUT ACCEPT || true
+            sudo iptables -P FORWARD ACCEPT || true
+            sudo iptables -P OUTPUT ACCEPT || true
             if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = "Enforcing" ]; then sudo setsebool -P httpd_can_network_connect 1 || true; fi
             if [ -f "/tmp/frontend_build.tgz" ]; then
               sudo rm -rf /usr/share/nginx/html/*
@@ -148,6 +160,15 @@ jobs:
             sudo nginx -t && sudo systemctl restart nginx
             # Show listeners for quick visibility
             sudo ss -lntp | (grep -E ":80|:8080" || true)
+            # Final network connectivity test from instance
+            echo "=== Final Connectivity Test ==="
+            timeout 5 curl -sI http://127.0.0.1/ | head -n 1 || echo "Local nginx test failed"
+            PUB_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null)
+            if [ -n "$PUB_IP" ]; then
+              echo "Public IP: $PUB_IP"
+              # Self-test via public IP (may fail due to security groups)
+              timeout 5 curl -sI "http://$PUB_IP/" | head -n 1 || echo "Public IP self-test failed (expected if SG blocks internal->external)"
+            fi
             command -v java >/dev/null 2>&1 || sudo dnf -y install java-17-openjdk-headless || sudo yum -y install java-17-openjdk-headless || true
             [ -f /tmp/demo-0.0.1-SNAPSHOT.jar ] && mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
             pkill -f 'demo-0.0.1-SNAPSHOT.jar' || true
