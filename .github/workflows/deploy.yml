@@ -173,17 +173,32 @@ jobs:
             [ -f /tmp/demo-0.0.1-SNAPSHOT.jar ] && mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
             pkill -f 'demo-0.0.1-SNAPSHOT.jar' || true
             mkdir -p /home/ec2-user/data
-            nohup java -jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 \
+            cd /home/ec2-user
+            # Verify JAR file exists and is valid
+            if [ ! -f demo-0.0.1-SNAPSHOT.jar ]; then
+              echo "ERROR: JAR file not found at /home/ec2-user/demo-0.0.1-SNAPSHOT.jar"
+              ls -la /home/ec2-user/ || true
+              exit 1
+            fi
+            echo "JAR file size: $(stat -c%s demo-0.0.1-SNAPSHOT.jar) bytes"
+            # Test Java installation
+            java -version || { echo "Java not working"; exit 1; }
+            # Start with explicit output redirection and error capture
+            echo "Starting Spring Boot application..."
+            java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 \
               --spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL \
               --spring.datasource.driverClassName=org.h2.Driver \
               --spring.datasource.username=sa --spring.datasource.password= \
               --spring.jpa.hibernate.ddl-auto=update \
               --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect \
-              --spring.sql.init.mode=never >/home/ec2-user/app.log 2>&1 &
-            # Wait for backend to listen on 8080 (max ~60s), then quick health
-            for i in $(seq 1 30); do
+              --spring.sql.init.mode=never > app.log 2>&1 &
+            JAVA_PID=$!
+            echo "Started Java process with PID: $JAVA_PID"
+            # More aggressive wait for startup with immediate log monitoring
+            for i in $(seq 1 45); do
               if ss -lntp | grep -q ":8080"; then
-                echo "Backend is listening on 8080"; break; fi
+                echo "Backend is listening on 8080 after ${i}*2 seconds"; break; fi
+              if [ $i -eq 15 ]; then echo "--- Startup logs so far ---"; tail -n 50 app.log 2>/dev/null || true; fi
               sleep 2
             done
             if ! ss -lntp | grep -q ":8080"; then
