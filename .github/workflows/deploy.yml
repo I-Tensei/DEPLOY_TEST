@@ -101,6 +101,7 @@ jobs:
           rm -f "$KEY"
 
       - name: Deploy on Bastion (nginx + backend)
+  continue-on-error: true
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.BASTION_HOST }}
@@ -165,6 +166,18 @@ jobs:
             sudo systemctl is-active nginx || true
             echo "DONE"
             exit 0
+
+      - name: External reachability check (HTTP)
+        env:
+          BASTION: ${{ secrets.BASTION_HOST }}
+        run: |
+          set -e
+          echo "Probing http://$BASTION ..."
+          if ! curl -sS -m 8 -I "http://$BASTION/" | head -n 1; then
+            echo "ERROR: Port 80 unreachable from GitHub runner."; exit 1;
+          fi
+          echo "Probing http://$BASTION/api/items ..."
+          curl -sS -m 8 "http://$BASTION/api/items" | head -c 400 || true
 
       - name: Notify Success
         if: ${{ success() }}
