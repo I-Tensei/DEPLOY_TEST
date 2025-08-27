@@ -124,7 +124,6 @@ jobs:
               echo "server {";
               echo "  listen 0.0.0.0:80;";
               echo "  listen [::]:80;";
-              echo "  server_name _;";
               echo "  location / {";
               echo "    root /usr/share/nginx/html;";
               echo "    index index.html index.htm;";
@@ -151,6 +150,16 @@ jobs:
               --spring.jpa.hibernate.ddl-auto=update \
               --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect \
               --spring.sql.init.mode=never >/home/ec2-user/app.log 2>&1 &
+            # Wait for backend to listen on 8080 (max ~60s), then quick health
+            for i in $(seq 1 30); do
+              if ss -lntp | grep -q ":8080"; then
+                echo "Backend is listening on 8080"; break; fi
+              sleep 2
+            done
+            if ! ss -lntp | grep -q ":8080"; then
+              echo "ERROR: Backend did not start. Recent logs:"; tail -n 200 /home/ec2-user/app.log || true; exit 1;
+            fi
+            curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 400 || true
 
       - name: Notify Success
         if: ${{ success() }}
