@@ -180,10 +180,20 @@ jobs:
 
             # Nginx (after backend is ready)
             sudo rm -f /etc/nginx/conf.d/*.conf || true
-            sudo bash -lc '{
+            # Optional Basic Auth (enabled when both secrets are provided)
+            HTUSER="${{ secrets.BASIC_AUTH_USER }}"; HTPASS="${{ secrets.BASIC_AUTH_PASS }}"; ENABLE_AUTH=0
+            if [ -n "$HTUSER" ] && [ -n "$HTPASS" ]; then
+              sudo bash -lc "printf '%s:%s\n' '$HTUSER' \"\$(openssl passwd -apr1 '$HTPASS')\" > /etc/nginx/.htpasswd"
+              ENABLE_AUTH=1
+            fi
+            sudo bash -lc 'AB_FLAG='"$ENABLE_AUTH"'; {
               echo "server {";
               echo "  listen 0.0.0.0:80;";
               echo "  listen [::]:80;";
+              if [ "$AB_FLAG" -eq 1 ]; then
+                echo "  auth_basic \"Restricted\";";
+                echo "  auth_basic_user_file /etc/nginx/.htpasswd;";
+              fi
               echo "  location / {";
               echo "    root /usr/share/nginx/html;";
               echo "    index index.html index.htm;";
@@ -223,14 +233,18 @@ jobs:
       - name: External reachability check (HTTP)
         env:
           BASTION: ${{ secrets.BASTION_HOST }}
+          BASIC_AUTH_USER: ${{ secrets.BASIC_AUTH_USER }}
+          BASIC_AUTH_PASS: ${{ secrets.BASIC_AUTH_PASS }}
         run: |
           set -e
+          AUTH_ARGS=""
+          if [ -n "${BASIC_AUTH_USER}" ] && [ -n "${BASIC_AUTH_PASS}" ]; then AUTH_ARGS="-u ${BASIC_AUTH_USER}:${BASIC_AUTH_PASS}"; fi
           echo "Probing http://$BASTION ..."
-          if ! curl -sS -m 8 -I "http://$BASTION/" | head -n 1; then
-            echo "ERROR: Port 80 unreachable from GitHub runner."; exit 1;
+          if ! curl -sS -m 8 $AUTH_ARGS -I "http://$BASTION/" | head -n 1; then
+            echo "ERROR: Port 80 unreachable from GitHub runner or auth failed."; exit 1;
           fi
           echo "Probing http://$BASTION/api/items ..."
-          curl -sS -m 8 "http://$BASTION/api/items" | head -c 400 || true
+          curl -sS -m 8 $AUTH_ARGS "http://$BASTION/api/items" | head -c 400 || true
 
       - name: Notify Success
         if: ${{ success() }}
