@@ -190,6 +190,17 @@ jobs:
               echo "ERROR: Backend did not start. Recent logs:"; tail -n 200 /home/ec2-user/app.log || true; exit 1;
             fi
             curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 400 || true
+            # Extended backend debugging
+            echo "=== Backend Debug Info ==="
+            ps aux | grep java || echo "No Java processes"
+            sudo ss -lntp | grep 8080 || echo "Port 8080 not listening"
+            echo "--- Recent app.log (last 100 lines) ---"
+            tail -n 100 /home/ec2-user/app.log 2>/dev/null || echo "No app.log found"
+            echo "--- Direct backend test ---"
+            curl -sS -m 3 http://127.0.0.1:8080/ || echo "Backend root failed"
+            curl -sS -m 3 http://127.0.0.1:8080/api/items || echo "Backend /api/items failed"
+            echo "--- Nginx error logs ---"
+            sudo tail -n 50 /var/log/nginx/error.log 2>/dev/null || echo "No nginx error.log"
             # avoid non-critical stderr causing failure
             set +e
             sudo systemctl is-active nginx || true
