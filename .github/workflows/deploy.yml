@@ -169,56 +169,62 @@ jobs:
               # Self-test via public IP (may fail due to security groups)
               timeout 5 curl -sI "http://$PUB_IP/" | head -n 1 || echo "Public IP self-test failed (expected if SG blocks internal->external)"
             fi
+            # === Backend: systemd service (robust, auto-restart, logs in journal) ===
             command -v java >/dev/null 2>&1 || sudo dnf -y install java-17-openjdk-headless || sudo yum -y install java-17-openjdk-headless || true
-            [ -f /tmp/demo-0.0.1-SNAPSHOT.jar ] && mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /home/ec2-user/demo-0.0.1-SNAPSHOT.jar
-            pkill -f 'demo-0.0.1-SNAPSHOT.jar' || true
-            mkdir -p /home/ec2-user/data
-            cd /home/ec2-user
-            # Verify JAR file exists and is valid
-            if [ ! -f demo-0.0.1-SNAPSHOT.jar ]; then
-              echo "ERROR: JAR file not found at /home/ec2-user/demo-0.0.1-SNAPSHOT.jar"
-              ls -la /home/ec2-user/ || true
-              exit 1
-            fi
-            echo "JAR file size: $(stat -c%s demo-0.0.1-SNAPSHOT.jar) bytes"
-            # Test Java installation
-            java -version || { echo "Java not working"; exit 1; }
-            # Start with explicit output redirection and error capture
-            echo "Starting Spring Boot application..."
-            java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 \
-              --spring.datasource.url=jdbc:h2:file:/home/ec2-user/data/demo_db\;AUTO_SERVER=TRUE\;DB_CLOSE_DELAY=-1\;MODE=MySQL \
-              --spring.datasource.driverClassName=org.h2.Driver \
-              --spring.datasource.username=sa --spring.datasource.password= \
-              --spring.jpa.hibernate.ddl-auto=update \
-              --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect \
-              --spring.sql.init.mode=never > app.log 2>&1 &
-            JAVA_PID=$!
-            echo "Started Java process with PID: $JAVA_PID"
-            # More aggressive wait for startup with immediate log monitoring
+            sudo mkdir -p /opt/demo /var/log/demo /home/ec2-user/data
+            if [ -f /tmp/demo-0.0.1-SNAPSHOT.jar ]; then sudo mv -f /tmp/demo-0.0.1-SNAPSHOT.jar /opt/demo/demo.jar; fi
+            if [ ! -f /opt/demo/demo.jar ]; then echo "ERROR: JAR missing at /opt/demo/demo.jar"; ls -la /opt/demo || true; exit 1; fi
+            echo "JAR file size: $(stat -c%s /opt/demo/demo.jar) bytes"
+            sudo chown -R ec2-user:ec2-user /opt/demo /var/log/demo /home/ec2-user/data
+            # Create/Update systemd unit
+            sudo bash -lc '{
+              echo "[Unit]";
+              echo "Description=Spring Boot Demo";
+              echo "After=network-online.target";
+              echo "Wants=network-online.target";
+              echo "";
+              echo "[Service]";
+              echo "User=ec2-user";
+              echo "WorkingDirectory=/opt/demo";
+              echo "Environment=JAVA_OPTS=-Xms128m -Xmx256m -XX:+UseG1GC -XX:MaxRAMPercentage=50";
+              echo "Environment=SERVER_ADDRESS=0.0.0.0";
+              echo "Environment=SERVER_PORT=8080";
+              echo "Environment=SPRING_DATASOURCE_URL=jdbc:h2:file:/home/ec2-user/data/demo_db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL";
+              echo "Environment=SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver";
+              echo "Environment=SPRING_DATASOURCE_USERNAME=sa";
+              echo "Environment=SPRING_DATASOURCE_PASSWORD=";
+              echo "Environment=SPRING_JPA_HIBERNATE_DDL_AUTO=update";
+              echo "Environment=SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect";
+              echo "Environment=SPRING_SQL_INIT_MODE=never";
+              echo "ExecStart=/usr/bin/java \$JAVA_OPTS -jar /opt/demo/demo.jar";
+              echo "SuccessExitStatus=143";
+              echo "Restart=always";
+              echo "RestartSec=3";
+              echo "StandardOutput=append:/var/log/demo/app.log";
+              echo "StandardError=inherit";
+              echo "LimitNOFILE=65535";
+              echo "";
+              echo "[Install]";
+              echo "WantedBy=multi-user.target";
+            } | sudo tee /etc/systemd/system/demo.service >/dev/null'
+            sudo systemctl daemon-reload
+            sudo systemctl enable --now demo.service
+            # Wait up to ~90s for port 8080
             for i in $(seq 1 45); do
-              if ss -lntp | grep -q ":8080"; then
-                echo "Backend is listening on 8080 after ${i}*2 seconds"; break; fi
-              if [ $i -eq 15 ]; then echo "--- Startup logs so far ---"; tail -n 50 app.log 2>/dev/null || true; fi
-              sleep 2
-            done
-            if ! ss -lntp | grep -q ":8080"; then
-              echo "ERROR: Backend did not start. Recent logs:"; tail -n 200 /home/ec2-user/app.log || true; exit 1;
-            fi
-            curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 400 || true
-            # Extended backend debugging
-            echo "=== Backend Debug Info ==="
-            ps aux | grep java || echo "No Java processes"
-            sudo ss -lntp | grep 8080 || echo "Port 8080 not listening"
-            echo "--- Recent app.log (last 100 lines) ---"
-            tail -n 100 /home/ec2-user/app.log 2>/dev/null || echo "No app.log found"
-            echo "--- Direct backend test ---"
-            curl -sS -m 3 http://127.0.0.1:8080/ || echo "Backend root failed"
-            curl -sS -m 3 http://127.0.0.1:8080/api/items || echo "Backend /api/items failed"
-            echo "--- Nginx error logs ---"
-            sudo tail -n 50 /var/log/nginx/error.log 2>/dev/null || echo "No nginx error.log"
+              if ss -lntp | grep -q ":8080"; then echo "Backend listening on 8080 (after $((i*2))s)"; break; fi; sleep 2; done
+            sudo systemctl --no-pager --full status demo.service || true
+            echo "--- journal (demo.service last 200 lines) ---"
+            sudo journalctl -u demo.service -n 200 --no-pager || true
+            echo "--- app.log (last 100 lines) ---"
+            sudo tail -n 100 /var/log/demo/app.log 2>/dev/null || echo "No /var/log/demo/app.log yet"
+            # Quick backend probe from instance
+            curl -sS -m 5 http://127.0.0.1:8080/api/items | head -c 400 || echo "Local backend probe failed"
+            # Nginx error logs for visibility
+            echo "--- Nginx error logs (last 50) ---"; sudo tail -n 50 /var/log/nginx/error.log 2>/dev/null || true
             # avoid non-critical stderr causing failure
             set +e
             sudo systemctl is-active nginx || true
+            sudo systemctl is-active demo || true
             echo "DONE"
             exit 0
 
