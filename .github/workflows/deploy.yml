@@ -101,7 +101,7 @@ jobs:
           rm -f "$KEY"
 
       - name: Deploy on Bastion (nginx + backend)
-  continue-on-error: true
+        continue-on-error: true
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.BASTION_HOST }}
