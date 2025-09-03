@@ -66,7 +66,7 @@ body {
   border: none;
   color: white;
   cursor: pointer;
-  font-size: clamp(12px, 1.8vw, 14px); /* レスポンシブフォントサイズ */
+  font-size: clamp(13px, 2vw, 16px); /* レスポンシブフォントサイズ - 少し大きく */
   transition: background-color 0.3s ease;
   display: flex;
   align-items: center;
@@ -316,6 +316,7 @@ body {
 /* 新規登録 */
 .register {
   max-width: 600px;
+  margin: 0 auto; /* 中央寄せ */
 }
 
 .form-container {
@@ -446,7 +447,7 @@ body {
   
   .sidebar-nav button {
     padding: 8px 12px;
-    font-size: 11px;
+  font-size: 12px; /* 極小画面でも少し大きく */
     margin: 0 2px;
   }
   
@@ -475,7 +476,7 @@ body {
   }
   
   .sidebar-nav button {
-    font-size: 14px;
+  font-size: 20px; /* 大画面では少し大きく */
     padding: 10px 20px;
   }
 }
