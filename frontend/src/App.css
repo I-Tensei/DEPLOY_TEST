@@ -36,7 +36,7 @@ body {
 }
 
 .sidebar-header h2 {
-  font-size: clamp(14px, 2.5vw, 18px); /* レスポンシブフォントサイズ */
+  font-size: clamp(20px, 2.5vw, 18px); /* レスポンシブフォントサイズ */
   font-weight: 600;
   white-space: nowrap;
 }
