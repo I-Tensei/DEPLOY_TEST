@@ -19,3 +19,22 @@ INSERT INTO items (item_number, item_name, model_number, in_stock, remarks, cate
 ('USB001', 'USBメモリ', '32GB USBメモリ SanDisk', 1, 'データ転送用', 1, 40, 1200, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('LAN001', 'LANケーブル', 'Cat6 LANケーブル 3m', 1, 'ネットワーク機器', 1, 35, 800, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
 ('PWR001', '電源タップ', '6口電源タップ 雷サージ保護', 1, 'PC周辺機器', 1, 20, 1500, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+
+-- user_id: user001 / password: pass1234
+INSERT INTO users (user_id, username, password_hash, role_level)
+VALUES (
+  'user001',
+  '田中',
+  '$2a$10$5r7ls7N9rYAbUZQXdtKxK.GQO0gNfGRjUHRsx3KoRNYye8sPiqqPC', -- pass1234
+  0
+);
+
+-- user_id: admin01 / password: admin123
+INSERT INTO users (user_id, username, password_hash, role_level)
+VALUES (
+  'admin01',
+  '山田',
+  '$2a$10$D03xdE8pSbg6ZrU7dHOdkO.nHVRFrsS5jvTk5AwJNPtscHzf0lg/G', -- admin123
+  1
+);

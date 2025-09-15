@@ -18,3 +18,14 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX idx_item_number ON items (item_number);
 CREATE INDEX idx_in_stock ON items (in_stock);
 CREATE INDEX idx_registered_at ON items (registered_at);
+
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id VARCHAR(20) NOT NULL UNIQUE,      -- Unique user ID (login ID)
+    username VARCHAR(50) NOT NULL,             -- Display name or real name of the user
+    password_hash VARCHAR(255) NOT NULL,       -- Hashed password (e.g., bcrypt)
+    role_level INT NOT NULL DEFAULT 0,         -- Role level (0 = normal user, 1 = admin, etc.)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Creation time
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Last update time
+    PRIMARY KEY (user_id)
+);
