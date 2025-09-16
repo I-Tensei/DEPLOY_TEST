@@ -41,7 +41,10 @@ public class SignInController {
         Cookie accessCookie = jwtUtil.createAccessCookie(accessToken);
 
         response.addCookie(accessCookie);
+        
+        // TODO: リフレッシュトークンの発行・DB保存・クッキー送信処理を追加する
 
+        
         return ResponseEntity.ok("You were logged in!");
     }
 }
