@@ -1,0 +1,29 @@
+/* 一般ユーザー用（黄色ベース） */
+:root{ --y:#ffd54f; --y2:#ffca28; --y3:#ffb300; --ink:#333; --bg:#fff8e1; }
+
+html,body,#root{ height:100%; }
+body{ background:var(--bg); color:var(--ink); font-family:'Segoe UI','Yu Gothic UI',sans-serif; }
+
+.pub-app{ min-height:100%; display:flex; flex-direction:column; }
+.pub-header{ background:linear-gradient(135deg,var(--y) 0%, var(--y2) 100%); color:#222; padding:12px 20px; box-shadow:0 2px 6px rgba(0,0,0,.08); display:flex; align-items:center; justify-content:space-between; }
+.pub-header h1{ font-size:20px; margin:0; font-weight:700; }
+.pub-actions{ display:flex; gap:10px; align-items:center; }
+.pub-search{ padding:8px 12px; border:1px solid #e0c462; border-radius:8px; min-width:220px; background:#fff; }
+.pub-check{ display:flex; align-items:center; gap:6px; font-size:13px; }
+
+.pub-content{ flex:1; padding:18px; }
+.pub-empty{ opacity:.7; }
+
+.pub-grid{ display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+.pub-card{ background:#fff; border:1px solid #f1e3a0; border-radius:12px; padding:14px; box-shadow:0 4px 10px rgba(0,0,0,.06); transition:transform .15s ease; }
+.pub-card:hover{ transform:translateY(-2px); }
+.pub-title{ font-weight:700; margin-bottom:4px; }
+.pub-sub{ color:#666; font-size:12px; margin-bottom:8px; }
+.pub-badge{ display:inline-block; padding:4px 10px; border-radius:20px; font-weight:700; font-size:12px; }
+.pub-badge.green{ background:#d4edda; color:#155724; }
+.pub-badge.red{ background:#ffe0e0; color:#b00020; }
+.pub-remarks{ margin-top:8px; font-size:12px; color:#555; }
+
+.pub-footer{ padding:14px 18px; text-align:center; font-size:12px; color:#555; }
+.pub-footer a{ color:#7a5e00; text-decoration:none; font-weight:600; }
+.pub-footer a:hover{ text-decoration:underline; }
