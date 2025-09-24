@@ -10,13 +10,17 @@ import jakarta.persistence.Table;
 public class User {
 
     @Id
-    @Column(nullable = false, unique = true)
+    @Column(name = "user_id", nullable = false, unique = true, length = 20)
     private String id;
 
-    @Column(nullable = false)
-    private String password;  
-    @Column(nullable = false)
-    private int roleLevel; 
+    @Column(name = "username", nullable = false, length = 50)
+    private String username;
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String password;
+
+    @Column(name = "role_level", nullable = false)
+    private int roleLevel;
 
     public User() {}
 
