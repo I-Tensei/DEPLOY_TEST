@@ -21,6 +21,24 @@ export default function PublicApp() {
     fetchItems();
   }, []);
 
+  // 在庫状態を更新（貸出/返却）
+  const updateStock = async (it, toInStock) => {
+    try {
+      const updated = { ...it, inStock: toInStock };
+      const res = await fetch(`/api/items/${it.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const saved = await res.json();
+      setItems((prev) => prev.map((x) => (x.id === it.id ? saved : x)));
+    } catch (e) {
+      console.error(e);
+      alert('在庫更新に失敗しました');
+    }
+  };
+
   const filterd = items.filter((it) => {
     const hit =
       it.itemName?.toLowerCase().includes(search.toLowerCase()) ||
@@ -60,12 +78,33 @@ export default function PublicApp() {
             {filterd.map((it) => (
               <div key={it.id} className={`pub-card ${it.inStock ? 'ok' : 'ng'}`}>
                 <div className="pub-title">{it.itemName}</div>
-                <div className="pub-sub">{it.itemNumber} / {it.modelNumber || '-'}
+                <div className="pub-sub">
+                  {it.itemNumber} / {it.modelNumber || '-'}
                 </div>
                 <div className={`pub-badge ${it.inStock ? 'green' : 'red'}`}>
                   {it.inStock ? '在庫あり' : '貸出中'}
                 </div>
                 {it.remarks && <div className="pub-remarks">{it.remarks}</div>}
+
+                {/* 操作: 削除等は表示せず、貸出/返却のみ */}
+                <div className="pub-actions-row">
+                  <button
+                    className="pub-btn lend"
+                    disabled={!it.inStock}
+                    onClick={() => updateStock(it, false)}
+                    title="貸出"
+                  >
+                    📤 貸出
+                  </button>
+                  <button
+                    className="pub-btn return"
+                    disabled={it.inStock}
+                    onClick={() => updateStock(it, true)}
+                    title="返却"
+                  >
+                    📥 返却
+                  </button>
+                </div>
               </div>
             ))}
           </div>

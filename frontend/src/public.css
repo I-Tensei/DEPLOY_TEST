@@ -24,6 +24,13 @@ body{ background:var(--bg); color:var(--ink); font-family:'Segoe UI','Yu Gothic 
 .pub-badge.red{ background:#ffe0e0; color:#b00020; }
 .pub-remarks{ margin-top:8px; font-size:12px; color:#555; }
 
+/* 操作用ボタン行 */
+.pub-actions-row{ display:flex; gap:8px; margin-top:10px; }
+.pub-btn{ appearance:none; border:0; padding:8px 12px; border-radius:8px; font-weight:700; cursor:pointer; font-size:13px; }
+.pub-btn.lend{ background:#fff3cd; color:#7a5e00; border:1px solid #ffe08a; }
+.pub-btn.return{ background:#d1ecf1; color:#0c5460; border:1px solid #9fd3da; }
+.pub-btn:disabled{ opacity:.5; cursor:not-allowed; }
+
 .pub-footer{ padding:14px 18px; text-align:center; font-size:12px; color:#555; }
 .pub-footer a{ color:#7a5e00; text-decoration:none; font-weight:600; }
 .pub-footer a:hover{ text-decoration:underline; }
