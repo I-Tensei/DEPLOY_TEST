@@ -52,7 +52,7 @@ deploy_backend() {
     # Start application on private server with MySQL (USE_H2=false), detect Java path
     ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
         ec2-user@${PRIVATE_SERVER} "cd /home/ec2-user && . ~/.bash_profile && \
-        nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 ${DB_OPTS} > app.log 2>&1 & sleep 5 && tail -n 50 app.log | sed -n '1,120p' || true"
+                nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 --spring.profiles.active=mysql > app.log 2>&1 & sleep 5 && tail -n 50 app.log | sed -n '1,120p' || true"
 
     # Optional: Seed MySQL with schema.sql and data.sql if requested
     if [ "${USE_H2}" = "false" ] && [ "${SEED_DATA}" = "true" ]; then
