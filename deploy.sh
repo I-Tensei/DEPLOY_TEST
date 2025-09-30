@@ -54,29 +54,20 @@ deploy_backend() {
         ec2-user@${PRIVATE_SERVER} "cd /home/ec2-user && . ~/.bash_profile && \
                 nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 --spring.profiles.active=mysql > app.log 2>&1 & sleep 5 && tail -n 50 app.log | sed -n '1,120p' || true"
 
-    # Optional: Seed MySQL with schema.sql and data.sql if requested
-    if [ "${USE_H2}" = "false" ] && [ "${SEED_DATA}" = "true" ]; then
+    # Seed MySQL with schema.sql and data.sql when using MySQL (ensure files are in ~/ schema.sql / data.sql on bastion)
+    if [ "${USE_H2}" = "false" ]; then
         echo "Seeding MySQL with schema.sql and data.sql..."
-        if [ -f "/tmp/DEPLOY_TEST/backend/demo/src/main/resources/schema.sql" ] && [ -f "/tmp/DEPLOY_TEST/backend/demo/src/main/resources/data.sql" ]; then
+        if [ -f "~/schema.sql" ] && [ -f "~/data.sql" ]; then
             scp -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
-                /tmp/DEPLOY_TEST/backend/demo/src/main/resources/schema.sql \
-                /tmp/DEPLOY_TEST/backend/demo/src/main/resources/data.sql \
+                ~/schema.sql \
+                ~/data.sql \
                 ec2-user@${PRIVATE_SERVER}:/home/ec2-user/
-
-            # Use MYSQL_* envs when present; require host/db/user
-            MYSQL_HOST_OR_DEFAULT=${MYSQL_HOST:-localhost}
-            MYSQL_PORT_OR_DEFAULT=${MYSQL_PORT:-3306}
-            MYSQL_DB_OR_DEFAULT=${MYSQL_DB:-demo_db}
-            MYSQL_USER_OR_DEFAULT=${MYSQL_USER:-demo_user}
-            MYSQL_PASSWORD_OR_DEFAULT=${MYSQL_PASSWORD:-}
-
-            # Execute schema and data import with password passed via env for safety
             ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
-                ec2-user@${PRIVATE_SERVER} "export MYSQL_PWD='${MYSQL_PASSWORD_OR_DEFAULT}'; mysql -h ${MYSQL_HOST_OR_DEFAULT} -P ${MYSQL_PORT_OR_DEFAULT} -u ${MYSQL_USER_OR_DEFAULT} ${MYSQL_DB_OR_DEFAULT} < /home/ec2-user/schema.sql && mysql -h ${MYSQL_HOST_OR_DEFAULT} -P ${MYSQL_PORT_OR_DEFAULT} -u ${MYSQL_USER_OR_DEFAULT} ${MYSQL_DB_OR_DEFAULT} < /home/ec2-user/data.sql && mysql -h ${MYSQL_HOST_OR_DEFAULT} -P ${MYSQL_PORT_OR_DEFAULT} -u ${MYSQL_USER_OR_DEFAULT} -N -e 'SELECT COUNT(*) FROM items' ${MYSQL_DB_OR_DEFAULT}; unset MYSQL_PWD" || {
-                    echo "MySQL seeding failed. Please check credentials or app.log.";
-                }
+                ec2-user@${PRIVATE_SERVER} "export MYSQL_PWD='${MYSQL_PASSWORD:-}'; mysql < /home/ec2-user/schema.sql && mysql < /home/ec2-user/data.sql && mysql -N -e 'SELECT COUNT(*) FROM items'" || {
+                echo "MySQL seeding failed. Please check credentials or app.log.";
+            }
         else
-            echo "schema.sql or data.sql not found under /tmp/DEPLOY_TEST. Skipping seeding."
+            echo "schema.sql or data.sql not found in home directory on bastion. Skipping seeding."
         fi
     fi
     
