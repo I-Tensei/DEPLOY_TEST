@@ -15,18 +15,16 @@ deploy_backend() {
     echo "=== Backend Deployment ==="
     
     # Stop existing Java process on private server
-    ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+    ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
         ec2-user@${PRIVATE_SERVER} 'pkill java || true; sleep 3'
     
     # Build and deploy new JAR (if local repo exists)
     if [ -d "/tmp/DEPLOY_TEST" ]; then
-        cd /tmp/DEPLOY_TEST
-        git pull origin main
-        cd backend/demo
+        cd /tmp/DEPLOY_TEST/backend/demo
         mvn clean package -DskipTests
         
         # Transfer new JAR to private server
-        scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+        scp -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
             target/demo-0.0.1-SNAPSHOT.jar ec2-user@${PRIVATE_SERVER}:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
     else
         echo "Repository not found locally. Using existing JAR."
@@ -51,14 +49,16 @@ deploy_backend() {
         DB_OPTS="${H2_DB_OPTS}"
     fi
 
-    ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
-        ec2-user@${PRIVATE_SERVER} "cd /home/ec2-user && nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 ${DB_OPTS} > app.log 2>&1 & sleep 5 && tail -n 50 app.log | sed -n '1,120p' || true"
+    # Start application on private server with MySQL (USE_H2=false), detect Java path
+    ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
+        ec2-user@${PRIVATE_SERVER} "cd /home/ec2-user && . ~/.bash_profile && \
+        nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 ${DB_OPTS} > app.log 2>&1 & sleep 5 && tail -n 50 app.log | sed -n '1,120p' || true"
 
     # Optional: Seed MySQL with schema.sql and data.sql if requested
     if [ "${USE_H2}" = "false" ] && [ "${SEED_DATA}" = "true" ]; then
         echo "Seeding MySQL with schema.sql and data.sql..."
         if [ -f "/tmp/DEPLOY_TEST/backend/demo/src/main/resources/schema.sql" ] && [ -f "/tmp/DEPLOY_TEST/backend/demo/src/main/resources/data.sql" ]; then
-            scp -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+            scp -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
                 /tmp/DEPLOY_TEST/backend/demo/src/main/resources/schema.sql \
                 /tmp/DEPLOY_TEST/backend/demo/src/main/resources/data.sql \
                 ec2-user@${PRIVATE_SERVER}:/home/ec2-user/
@@ -71,7 +71,7 @@ deploy_backend() {
             MYSQL_PASSWORD_OR_DEFAULT=${MYSQL_PASSWORD:-}
 
             # Execute schema and data import with password passed via env for safety
-            ssh -i /home/ec2-user/MyKeyPair.pem -o StrictHostKeyChecking=no \
+            ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
                 ec2-user@${PRIVATE_SERVER} "export MYSQL_PWD='${MYSQL_PASSWORD_OR_DEFAULT}'; mysql -h ${MYSQL_HOST_OR_DEFAULT} -P ${MYSQL_PORT_OR_DEFAULT} -u ${MYSQL_USER_OR_DEFAULT} ${MYSQL_DB_OR_DEFAULT} < /home/ec2-user/schema.sql && mysql -h ${MYSQL_HOST_OR_DEFAULT} -P ${MYSQL_PORT_OR_DEFAULT} -u ${MYSQL_USER_OR_DEFAULT} ${MYSQL_DB_OR_DEFAULT} < /home/ec2-user/data.sql && mysql -h ${MYSQL_HOST_OR_DEFAULT} -P ${MYSQL_PORT_OR_DEFAULT} -u ${MYSQL_USER_OR_DEFAULT} -N -e 'SELECT COUNT(*) FROM items' ${MYSQL_DB_OR_DEFAULT}; unset MYSQL_PWD" || {
                     echo "MySQL seeding failed. Please check credentials or app.log.";
                 }
@@ -107,10 +107,11 @@ deploy_frontend() {
 # Main deployment process
 main() {
     # Clone or update repository
-    if [ ! -d "/tmp/DEPLOY_TEST" ]; then
-        cd /tmp
-        git clone ${REPO_URL}
-    fi
+    # Offline environment: skip git clone/pull
+    # if [ ! -d "/tmp/DEPLOY_TEST" ]; then
+    #     cd /tmp
+    #     git clone ${REPO_URL}
+    # fi
     
     deploy_backend
     deploy_frontend
