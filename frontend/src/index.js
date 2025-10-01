@@ -8,6 +8,7 @@ import PublicApp from './PublicApp';
 
 const router = createBrowserRouter([
   { path: '/', element: <PublicApp /> },
+  { path: '/signin', element: <Signin /> },  
   { path: '/admin', element: <App /> },
 ]);
 
