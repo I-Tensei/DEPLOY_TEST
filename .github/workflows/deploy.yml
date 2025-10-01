@@ -141,13 +141,8 @@ jobs:
               echo "Environment=JAVA_OPTS=-Xms128m -Xmx256m -XX:+UseG1GC -XX:MaxRAMPercentage=50";
               echo "Environment=SERVER_ADDRESS=0.0.0.0";
               echo "Environment=SERVER_PORT=8080";
-              echo "Environment=SPRING_DATASOURCE_URL=jdbc:h2:file:/home/ec2-user/data/demo_db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1;MODE=MySQL";
-              echo "Environment=SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.h2.Driver";
-              echo "Environment=SPRING_DATASOURCE_USERNAME=sa";
-              echo "Environment=SPRING_DATASOURCE_PASSWORD=";
-              echo "Environment=SPRING_JPA_HIBERNATE_DDL_AUTO=update";
-              echo "Environment=SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.H2Dialect";
-              echo "Environment=SPRING_SQL_INIT_MODE=never";
+              # Use MySQL profile (application-mysql.properties) instead of embedded H2
+              echo "Environment=SPRING_PROFILES_ACTIVE=mysql";
               echo "ExecStart=/usr/bin/java \$JAVA_OPTS -jar /opt/demo/demo.jar";
               echo "SuccessExitStatus=143";
               echo "Restart=always";

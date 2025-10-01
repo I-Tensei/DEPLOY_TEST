@@ -15,7 +15,7 @@ deploy_backend() {
     echo "=== Backend Deployment ==="
     
     # Stop existing Java process on private server
-    ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
+    ssh -i ~/.ssh/0715.pem -o StrictHostKeyChecking=no \
         ec2-user@${PRIVATE_SERVER} 'pkill java || true; sleep 3'
     
     # Build and deploy new JAR (if local repo exists)
@@ -24,7 +24,7 @@ deploy_backend() {
         mvn clean package -DskipTests
         
         # Transfer new JAR to private server
-        scp -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
+        scp -i ~/.ssh/0715.pem -o StrictHostKeyChecking=no \
             target/demo-0.0.1-SNAPSHOT.jar ec2-user@${PRIVATE_SERVER}:/home/ec2-user/demo-0.0.1-SNAPSHOT.jar
     else
         echo "Repository not found locally. Using existing JAR."
@@ -50,7 +50,7 @@ deploy_backend() {
     fi
 
     # Start application on private server with MySQL (USE_H2=false), detect Java path
-    ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
+        ssh -i ~/.ssh/0715.pem -o StrictHostKeyChecking=no \
         ec2-user@${PRIVATE_SERVER} "cd /home/ec2-user && . ~/.bash_profile && \
                 nohup java -jar demo-0.0.1-SNAPSHOT.jar --server.address=0.0.0.0 --spring.profiles.active=mysql > app.log 2>&1 & sleep 5 && tail -n 50 app.log | sed -n '1,120p' || true"
 
@@ -59,9 +59,9 @@ deploy_backend() {
         echo "Seeding MySQL with schema.sql and data.sql..."
         if [ -f "~/schema.sql" ] && [ -f "~/data.sql" ]; then
             scp -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
-                ~/schema.sql \
-                ~/data.sql \
-                ec2-user@${PRIVATE_SERVER}:/home/ec2-user/
+                    ~/schema.sql \
+                    ~/data.sql \
+                    ec2-user@${PRIVATE_SERVER}:/home/ec2-user/
             ssh -i /home/ec2-user/0715.pem -o StrictHostKeyChecking=no \
                 ec2-user@${PRIVATE_SERVER} "export MYSQL_PWD='${MYSQL_PASSWORD:-}'; mysql < /home/ec2-user/schema.sql && mysql < /home/ec2-user/data.sql && mysql -N -e 'SELECT COUNT(*) FROM items'" || {
                 echo "MySQL seeding failed. Please check credentials or app.log.";
