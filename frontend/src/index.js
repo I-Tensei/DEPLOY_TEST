@@ -4,6 +4,7 @@ import './index.css';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
 import PublicApp from './PublicApp';
+import Signin from './signin';
 
 
 const router = createBrowserRouter([
