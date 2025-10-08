@@ -188,22 +188,26 @@ function App() {
     }
   };
 
-  // フィルタリングされた在庫リスト
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.itemNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.modelNumber.toLowerCase().includes(searchTerm.toLowerCase());
-    
+  // API 異常時に items が配列でない可能性に備えたセーフガード
+  const list = Array.isArray(items) ? items : [];
+
+  // フィルタリングされた在庫リスト（nullセーフ）
+  const filteredItems = list.filter(item => {
+    const name  = (item.itemName    || '').toLowerCase();
+    const num   = (item.itemNumber  || '').toLowerCase();
+    const model = (item.modelNumber || '').toLowerCase();
+    const q     = (searchTerm       || '').toLowerCase();
+
+    const matchesSearch = name.includes(q) || num.includes(q) || model.includes(q);
     const matchesFilter = filterStock === 'all' || 
-                         (filterStock === 'inStock' && item.inStock) ||
-                         (filterStock === 'outOfStock' && !item.inStock);
-    
+                          (filterStock === 'inStock' && item.inStock) ||
+                          (filterStock === 'outOfStock' && !item.inStock);
     return matchesSearch && matchesFilter;
   });
 
-  // 統計情報
-  const totalItems = items.length;
-  const inStockItems = items.filter(item => item.inStock).length;
+  // 統計情報（セーフリスト使用）
+  const totalItems = list.length;
+  const inStockItems = list.filter(item => item.inStock).length;
   const outOfStockItems = totalItems - inStockItems;
 
   return (
@@ -276,7 +280,7 @@ function App() {
               <div className="recent-activity">
                 <h3>最近登録された備品</h3>
                 <div className="recent-items">
-                  {items.slice(-5).reverse().map(item => (
+                  {list.slice(-5).reverse().map(item => (
                     <div key={item.id} className="recent-item">
                       <div className="item-info">
                         <strong>{item.itemName}</strong>
@@ -528,13 +532,13 @@ function App() {
               <div className="report-section">
                 <h3>貸出中アイテム</h3>
                 <div className="low-stock-list">
-                  {items.filter(item => !item.inStock).map(item => (
+                  {list.filter(item => !item.inStock).map(item => (
                     <div key={item.id} className="low-stock-item">
                       <strong>{item.itemName}</strong> ({item.itemNumber})
                       {item.remarks && <span className="item-remarks"> - {item.remarks}</span>}
                     </div>
                   ))}
-                  {items.filter(item => !item.inStock).length === 0 && (
+                  {list.filter(item => !item.inStock).length === 0 && (
                     <p>貸出中のアイテムはありません。</p>
                   )}
                 </div>
