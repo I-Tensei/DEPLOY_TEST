@@ -175,22 +175,13 @@ jobs:
               rm -f /tmp/frontend_build.tgz
             fi
 
-            # Nginx (after backend is ready)
+            # Nginx (after backend is ready) - Basic Auth removed
             sudo rm -f /etc/nginx/conf.d/*.conf || true
-            # Optional Basic Auth (enabled when both secrets are provided)
-            HTUSER="${{ secrets.BASIC_AUTH_USER }}"; HTPASS="${{ secrets.BASIC_AUTH_PASS }}"; ENABLE_AUTH=0
-            if [ -n "$HTUSER" ] && [ -n "$HTPASS" ]; then
-              sudo bash -lc "printf '%s:%s\n' '$HTUSER' \"\$(openssl passwd -apr1 '$HTPASS')\" > /etc/nginx/.htpasswd"
-              ENABLE_AUTH=1
-            fi
-            sudo bash -lc 'AB_FLAG='"$ENABLE_AUTH"'; {
+            sudo rm -f /etc/nginx/.htpasswd || true
+            sudo bash -lc '{
               echo "server {";
               echo "  listen 0.0.0.0:80;";
               echo "  listen [::]:80;";
-              if [ "$AB_FLAG" -eq 1 ]; then
-                echo "  auth_basic \"Restricted\";";
-                echo "  auth_basic_user_file /etc/nginx/.htpasswd;";
-              fi
               echo "  location / {";
               echo "    root /usr/share/nginx/html;";
               echo "    index index.html index.htm;";
