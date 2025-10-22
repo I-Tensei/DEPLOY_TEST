@@ -212,7 +212,7 @@ function App() {
 
   return (
     <div className="app">
-      {/* サイドバー */}
+      {/* サイドバー　 */}
       <div className="sidebar">
         <div className="sidebar-header">
           <h2>在庫管理システム</h2>
