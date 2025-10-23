@@ -12,7 +12,7 @@ export default function Signin() {
     e.preventDefault();
     setError("");
     try {
-      const res = await fetch('/auth/signin', {        
+      const res = await fetch('/api/auth/signin', {        
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',                  
