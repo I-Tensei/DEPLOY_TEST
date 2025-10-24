@@ -12,7 +12,7 @@ import java.util.Arrays;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping({"/auth", "/api/auth"})
 @CrossOrigin(origins = "*")
 public class AuthMeController {
 
