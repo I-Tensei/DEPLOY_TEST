@@ -5,7 +5,8 @@ import { Navigate } from "react-router-dom";
 export default function Signin() {
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
-  const [redirect, setRedirect] = useState(false);
+  // redirect 先のパスを保持（null なら未リダイレクト）
+  const [redirect, setRedirect] = useState(null);
   const [error, setError] = useState("");
 
   const submit = async (e) => {
@@ -22,13 +23,23 @@ export default function Signin() {
         const msg = await res.text();
         throw new Error(msg || 'Invalid ID or password');
       }
-      setRedirect(true);
+      // ロールに応じて遷移先を分岐（roleLevel>=1 を管理者とみなす）
+      let path = "/";
+      try {
+        const data = await res.json();
+        if (data && typeof data.roleLevel === 'number' && data.roleLevel >= 1) {
+          path = "/admin";
+        }
+      } catch (_) {
+        // 解析失敗時はデフォルトの "/" に遷移
+      }
+      setRedirect(path);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  if (redirect) return <Navigate to="/" replace />;
+  if (redirect) return <Navigate to={redirect} replace />;
 
   return (
     <div className="login-page">

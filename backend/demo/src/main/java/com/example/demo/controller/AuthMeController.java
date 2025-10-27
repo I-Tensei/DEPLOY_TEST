@@ -40,7 +40,7 @@ public class AuthMeController {
                     .body(Map.of("error", "Invalid or expired token"));
         }
 
-        // トークンからユーザー情報を取得 
+        // トークンからユーザー情報を取得する
         String userId = claims.getSubject(); // createAccessTokenで .subject(userId)
         Integer roleLevel = claims.get("roleLevel", Integer.class);
 
