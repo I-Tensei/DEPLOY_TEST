@@ -143,6 +143,10 @@ jobs:
               echo "Environment=SERVER_PORT=8080";
               # Use MySQL profile (application-mysql.properties) instead of embedded H2
               echo "Environment=SPRING_PROFILES_ACTIVE=mysql";
+              # Explicit DB connection (override jar default localhost)
+              echo "Environment=SPRING_DATASOURCE_URL=jdbc:mysql://172.27.11.203:3306/demo_db?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8&serverTimezone=Asia/Tokyo&connectTimeout=3000&socketTimeout=60000";
+              echo "Environment=SPRING_DATASOURCE_USERNAME=demo_user";
+              echo "Environment=SPRING_DATASOURCE_PASSWORD=demo_Pass123!";
               echo "ExecStart=/usr/bin/java \$JAVA_OPTS -jar /opt/demo/demo.jar";
               echo "SuccessExitStatus=143";
               echo "Restart=always";
